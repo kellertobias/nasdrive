@@ -40,7 +40,7 @@ We are not trying to replace Nextcloud, Dropbox, or a full document collaboratio
 The fastest production-like setup is Docker Compose with local users:
 
 ```bash
-git clone <this-repository-url> nasfiles
+git clone git@github.com:kellertobias/tobisk-nasfiles.git nasfiles
 cd nasfiles
 cp docs/examples/compose.local.yml docker-compose.yml
 mkdir -p ./data ./files
