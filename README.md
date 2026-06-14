@@ -148,6 +148,12 @@ For a local screenshot/demo environment:
 ./scripts/demo.sh
 ```
 
+## Disclaimer
+
+This repository is fully vibe coded by me to solve the problem of having too little RAM on my NAS to run Nextcloud - and all the other low ressource solutions had a horrible UX. I ran multiple security audits by all major models (even Fable 5.0 in the 2 days it was out) and fixed all problems (of which there weren't many, since I focused on security early on).
+
+Its however still vibe coded, so use at your own risk.
+
 ## MIT License
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
