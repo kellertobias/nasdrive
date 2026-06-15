@@ -200,6 +200,9 @@ export function PreviewPane({
               {detail}
             </span>
           ))}
+          {previewType === 'image' && imagePreview && (
+            <span style={previewBadgeStyle}>Preview</span>
+          )}
           {fileEntries.length > 1 && (
             <span style={{
               fontSize: 'var(--text-xs)',
@@ -676,6 +679,21 @@ const iconButtonStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,0.1)',
   cursor: 'pointer',
   textDecoration: 'none',
+};
+
+const previewBadgeStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  height: 20,
+  padding: '0 8px',
+  border: '1px solid rgba(255,255,255,0.22)',
+  borderRadius: 999,
+  background: 'rgba(255,255,255,0.12)',
+  color: 'rgba(255,255,255,0.86)',
+  fontSize: 'var(--text-xs)',
+  fontWeight: 600,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
 };
 
 const navArrowStyle: React.CSSProperties = {

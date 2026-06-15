@@ -588,6 +588,9 @@ function FileBrowser() {
     });
     return entry ? { entry, parentPath: path, path: selectedPath } : null;
   }, [listing, path, selectedPaths, viewMode]);
+  const hasReadme = Boolean(listing?.entries.some(isReadmeEntry));
+  const readmeShown = viewMode !== 'columns' && hasReadme && !selectedDetails && !readmeHidden;
+  const canShowReadme = viewMode !== 'columns' && hasReadme && !readmeShown;
   const deletePreviewItems = selectedItems.slice(0, 5).map((selectedPath) => {
     const name = selectedPath.split('/').filter(Boolean).pop();
     return { path: selectedPath, name: name || selectedPath };
@@ -993,7 +996,14 @@ function FileBrowser() {
                 )}
 
                 {viewMode !== 'columns' && listing && currentRoot?.usage && (
-                  <FreeSpaceFooter availableBytes={currentRoot.usage.available_bytes} />
+                  <FreeSpaceFooter
+                    availableBytes={currentRoot.usage.available_bytes}
+                    canShowReadme={canShowReadme}
+                    onShowReadme={() => {
+                      setReadmeHidden(false);
+                      useViewStore.getState().clearSelection();
+                    }}
+                  />
                 )}
               </div>
 
@@ -1007,7 +1017,7 @@ function FileBrowser() {
                 />
               )}
 
-              {viewMode !== 'columns' && !selectedDetails && !readmeHidden && listing && listing.entries.length > 0 && (
+              {readmeShown && listing && (
                 <DirectoryReadme entries={listing.entries} root={root} path={path} onClose={() => setReadmeHidden(true)} />
               )}
             </div>
@@ -1451,20 +1461,52 @@ function formatCount(count: number, noun: string) {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-function FreeSpaceFooter({ availableBytes }: { availableBytes: number }) {
+function isReadmeEntry(entry: FileEntry) {
+  return !entry.is_dir && ['README.md', 'Readme.md', 'readme.md'].includes(entry.name);
+}
+
+function FreeSpaceFooter({
+  availableBytes,
+  canShowReadme,
+  onShowReadme,
+}: {
+  availableBytes: number;
+  canShowReadme: boolean;
+  onShowReadme: () => void;
+}) {
   return (
     <div
       className="tabular-nums"
       style={{
         marginTop: 'auto',
         paddingTop: 'var(--space-4)',
-        textAlign: 'right',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: 'var(--space-3)',
         color: 'var(--color-fg-subtle)',
         fontSize: 'var(--text-xs)',
         fontWeight: 500,
       }}
     >
-      {formatFileSize(availableBytes)} remaining
+      <span>{formatFileSize(availableBytes)} remaining</span>
+      {canShowReadme && (
+        <button
+          type="button"
+          onClick={onShowReadme}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            color: 'var(--color-accent)',
+            cursor: 'pointer',
+            font: 'inherit',
+            fontWeight: 600,
+          }}
+        >
+          show readme
+        </button>
+      )}
     </div>
   );
 }
