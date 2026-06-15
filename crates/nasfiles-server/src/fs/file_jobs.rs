@@ -818,7 +818,7 @@ async fn plan_delete_job(state: &AppState, job: &FileJob) -> Result<Vec<PlannedI
         append_delete_items(&mut items, &mut ordinal, rel, &source).await?;
     }
 
-    items.sort_by(|a, b| path_depth(&b.source_path).cmp(&path_depth(&a.source_path)));
+    items.sort_by_key(|item| std::cmp::Reverse(path_depth(&item.source_path)));
     for (index, item) in items.iter_mut().enumerate() {
         item.ordinal = index as i64;
     }
@@ -947,14 +947,12 @@ async fn execute_atomic_move_item(
     target: &Path,
 ) -> Result<(), FileOpError> {
     if target.exists() {
-        if verify_existing_target(item, target).await? {
-            if !source.exists() {
-                state
-                    .file_jobs
-                    .mark_item_done(item, item.size_bytes)
-                    .await?;
-                return Ok(());
-            }
+        if verify_existing_target(item, target).await? && !source.exists() {
+            state
+                .file_jobs
+                .mark_item_done(item, item.size_bytes)
+                .await?;
+            return Ok(());
         }
         return Err(FileOpError::AlreadyExists);
     }
