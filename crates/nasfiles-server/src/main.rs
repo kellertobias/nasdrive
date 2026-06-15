@@ -90,6 +90,10 @@ async fn main() -> anyhow::Result<()> {
         sftp::server::spawn(state.clone()).await?;
     }
 
+    if let Err(e) = fs::file_jobs::spawn_recovered_jobs(state.clone()).await {
+        tracing::warn!("failed to recover file operation jobs: {e}");
+    }
+
     if state.config.no_server_side_execution {
         tracing::info!(
             "NO_SERVER_SIDE_EXECUTION enabled — archive extraction, thumbnails, media previews, and media metadata probing disabled"
@@ -130,6 +134,18 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/transfer-jobs/{job_id}/cancel",
             post(api::files::cancel_transfer_job),
+        )
+        .route(
+            "/file-jobs/{job_id}/resume",
+            post(api::files::resume_file_job),
+        )
+        .route(
+            "/file-jobs/{job_id}/cancel",
+            post(api::files::cancel_file_job),
+        )
+        .route(
+            "/file-jobs/{job_id}/cleanup",
+            post(api::files::cleanup_file_job),
         )
         .route("/files/{root}/list", get(api::files::list_directory))
         .route("/files/{root}/tree", get(api::files::list_tree))

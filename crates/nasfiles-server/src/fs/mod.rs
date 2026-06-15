@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod file_jobs;
 pub mod image_info;
 pub mod listing;
 pub mod media_info;

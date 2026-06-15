@@ -2,6 +2,7 @@ import api from '../api/client';
 import type { TransferJob, UserInfo } from '../api/client';
 import { useViewStore } from '../state/view';
 import { useState, useRef, useEffect, useMemo } from 'react';
+import type { CSSProperties } from 'react';
 import { Icon } from './Icon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
@@ -87,8 +88,14 @@ export function TopBar({ user }: TopBarProps) {
 
   const transferJobs = useMemo(() => transferJobData?.jobs ?? [], [transferJobData?.jobs]);
   const activeTransferJobs = transferJobs.filter((job) => job.status === 'queued' || job.status === 'running');
+  const pausedTransferJobs = transferJobs.filter((job) => job.status === 'paused_needs_confirmation');
+  const visibleTransferJobs = [...pausedTransferJobs, ...activeTransferJobs];
   const activeTransferCount = activeTransferJobs.length;
-  const activeOperation = activeTransferJobs.some((job) => job.operation === 'copy') ? 'Copying' : 'Moving';
+  const activeOperation = activeTransferJobs.some((job) => job.operation === 'delete')
+    ? 'Deleting'
+    : activeTransferJobs.some((job) => job.operation === 'copy')
+      ? 'Copying'
+      : 'Moving';
   const totalBytes = activeTransferJobs.reduce((sum, job) => sum + job.total_bytes, 0);
   const transferredBytes = activeTransferJobs.reduce((sum, job) => sum + job.transferred_bytes, 0);
   const totalEntries = activeTransferJobs.reduce((sum, job) => sum + job.total_entries, 0);
@@ -105,7 +112,19 @@ export function TopBar({ user }: TopBarProps) {
       : 'Preparing';
   const remainingLabel = formatRemainingTime(estimateRemainingMs(activeTransferJobs));
   const cancelTransferMutation = useMutation({
-    mutationFn: (jobId: string) => api.cancelTransferJob(jobId),
+    mutationFn: (jobId: string) => api.cancelFileJob(jobId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfer-jobs'] });
+    },
+  });
+  const resumeTransferMutation = useMutation({
+    mutationFn: (jobId: string) => api.resumeFileJob(jobId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfer-jobs'] });
+    },
+  });
+  const cleanupTransferMutation = useMutation({
+    mutationFn: (jobId: string) => api.cleanupFileJob(jobId),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['transfer-jobs'] });
     },
@@ -190,12 +209,12 @@ export function TopBar({ user }: TopBarProps) {
 
       <div style={{ flex: 1 }} />
 
-      {activeTransferCount > 0 && (
+      {visibleTransferJobs.length > 0 && (
         <div ref={transferMenuRef} style={{ position: 'relative' }}>
           <button
             type="button"
             onClick={() => setTransferMenuOpen((open) => !open)}
-            title="Transfer details"
+            title="File operation details"
             aria-haspopup="menu"
             aria-expanded={transferMenuOpen}
             style={{
@@ -212,7 +231,7 @@ export function TopBar({ user }: TopBarProps) {
               cursor: 'pointer',
               textAlign: 'left',
             }}>
-            <Icon name="upload" size={15} color="var(--color-accent)" />
+            <Icon name={pausedTransferJobs.length > 0 ? 'alertTriangle' : 'upload'} size={15} color="var(--color-accent)" />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
                 display: 'flex',
@@ -228,7 +247,9 @@ export function TopBar({ user }: TopBarProps) {
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}>
-                  {activeOperation} {activeTransferCount > 1 ? `${activeTransferCount} jobs` : `${activeTransferJobs[0]?.paths.length ?? 0} item(s)`}
+                  {activeTransferCount > 0
+                    ? `${activeOperation} ${activeTransferCount > 1 ? `${activeTransferCount} jobs` : `${activeTransferJobs[0]?.paths.length ?? 0} item(s)`}`
+                    : `${pausedTransferJobs.length} job${pausedTransferJobs.length === 1 ? '' : 's'} need attention`}
                 </span>
                 <span className="tabular-nums" style={{ fontSize: 'var(--text-xs)', color: 'var(--color-fg-muted)' }}>
                   {progressPct}%
@@ -256,7 +277,7 @@ export function TopBar({ user }: TopBarProps) {
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}>
-                {progressLabel} · {remainingLabel}
+                {activeTransferCount > 0 ? `${progressLabel} · ${remainingLabel}` : 'Resume or clean up recovered work'}
               </div>
             </div>
             <Icon name="chevronDown" size={14} color="var(--color-fg-subtle)" />
@@ -290,14 +311,18 @@ export function TopBar({ user }: TopBarProps) {
                 fontSize: 'var(--text-sm)',
                 fontWeight: 600,
               }}>
-                Transfers
+                File operations
               </div>
-              {activeTransferJobs.map((job) => (
+              {visibleTransferJobs.map((job) => (
                 <TransferJobMenuItem
                   key={job.id}
                   job={job}
                   cancelling={cancelTransferMutation.variables === job.id && cancelTransferMutation.isPending}
+                  resuming={resumeTransferMutation.variables === job.id && resumeTransferMutation.isPending}
+                  cleaning={cleanupTransferMutation.variables === job.id && cleanupTransferMutation.isPending}
                   onCancel={() => cancelTransferMutation.mutate(job.id)}
+                  onResume={() => resumeTransferMutation.mutate(job.id)}
+                  onCleanup={() => cleanupTransferMutation.mutate(job.id)}
                 />
               ))}
             </div>
@@ -485,20 +510,30 @@ export function TopBar({ user }: TopBarProps) {
 function TransferJobMenuItem({
   job,
   cancelling,
+  resuming,
+  cleaning,
   onCancel,
+  onResume,
+  onCleanup,
 }: {
   job: TransferJob;
   cancelling: boolean;
+  resuming: boolean;
+  cleaning: boolean;
   onCancel: () => void;
+  onResume: () => void;
+  onCleanup: () => void;
 }) {
   const percent = transferProgressPercent([job]);
-  const title = `${job.operation === 'copy' ? 'Copy' : 'Move'} ${job.paths.length} item${job.paths.length === 1 ? '' : 's'}`;
+  const operationLabel = job.operation === 'copy' ? 'Copy' : job.operation === 'move' ? 'Move' : 'Delete';
+  const title = `${operationLabel} ${job.paths.length} item${job.paths.length === 1 ? '' : 's'}`;
   const detail = job.total_bytes > 0
     ? `${formatFileSize(job.transferred_bytes)} / ${formatFileSize(job.total_bytes)}`
     : job.total_entries > 0
       ? `${job.completed_entries} / ${job.total_entries} items`
       : 'Preparing';
   const destination = job.dest_path || '/';
+  const isPaused = job.status === 'paused_needs_confirmation';
 
   return (
     <div
@@ -554,32 +589,74 @@ function TransferJobMenuItem({
             {detail}
           </span>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            to {job.dest_root}:{destination}
+            {job.operation === 'delete' ? `from ${job.source_root}` : `to ${job.dest_root}:${destination}`}
           </span>
+          {isPaused && (
+            <span style={{ color: 'var(--color-warning, var(--color-accent))' }}>
+              Needs confirmation after restart
+            </span>
+          )}
+          {job.error && (
+            <span style={{ color: 'var(--color-danger)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {job.error}
+            </span>
+          )}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onCancel}
-        disabled={cancelling}
-        title="Cancel transfer"
-        aria-label="Cancel transfer"
-        style={{
-          width: 30,
-          height: 30,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-md)',
-          background: 'transparent',
-          color: 'var(--color-fg-muted)',
-          cursor: cancelling ? 'progress' : 'pointer',
-          opacity: cancelling ? 0.6 : 1,
-        }}
-      >
-        <Icon name="x" size={14} />
-      </button>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'start' }}>
+        {isPaused && (
+          <>
+            <button
+              type="button"
+              onClick={onResume}
+              disabled={resuming}
+              title="Resume operation"
+              aria-label="Resume operation"
+              style={jobActionButtonStyle(resuming)}
+            >
+              <Icon name="checkCircle" size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={onCleanup}
+              disabled={cleaning}
+              title="Clean up operation"
+              aria-label="Clean up operation"
+              style={jobActionButtonStyle(cleaning)}
+            >
+              <Icon name="x" size={14} />
+            </button>
+          </>
+        )}
+        {!isPaused && (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={cancelling}
+            title="Cancel operation"
+            aria-label="Cancel operation"
+            style={jobActionButtonStyle(cancelling)}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        )}
+      </div>
     </div>
   );
+}
+
+function jobActionButtonStyle(disabled: boolean): CSSProperties {
+  return {
+    width: 30,
+    height: 30,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    background: 'transparent',
+    color: 'var(--color-fg-muted)',
+    cursor: disabled ? 'progress' : 'pointer',
+    opacity: disabled ? 0.6 : 1,
+  };
 }

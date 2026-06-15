@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import api from '../api/client';
 import { Icon } from './Icon';
 import { hasNasfilesDrag } from '../lib/fileDrag';
+import { useGlobalDragCleanup } from '../lib/dragState';
 
 interface UploadZoneProps {
   root: string;
@@ -25,6 +26,17 @@ export function UploadZone({ root, path, children, onUploadComplete, canUpload =
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const resetDragState = useCallback(() => {
+    dragCounter.current = 0;
+    setIsDragging(false);
+  }, []);
+
+  useGlobalDragCleanup(resetDragState);
+
+  useEffect(() => {
+    if (!canUpload) resetDragState();
+  }, [canUpload, resetDragState]);
+
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     if (!canUpload) return;
     if (hasNasfilesDrag(e.dataTransfer)) return;
@@ -41,7 +53,7 @@ export function UploadZone({ root, path, children, onUploadComplete, canUpload =
     if (hasNasfilesDrag(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
-    dragCounter.current--;
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
     if (dragCounter.current === 0) {
       setIsDragging(false);
     }
@@ -111,13 +123,12 @@ export function UploadZone({ root, path, children, onUploadComplete, canUpload =
       if (hasNasfilesDrag(e.dataTransfer)) return;
       e.preventDefault();
       e.stopPropagation();
-      dragCounter.current = 0;
-      setIsDragging(false);
+      resetDragState();
 
       const files = Array.from(e.dataTransfer.files);
       await uploadFiles(files);
     },
-    [canUpload, uploadFiles]
+    [canUpload, resetDragState, uploadFiles]
   );
 
   const handleFileSelect = useCallback(

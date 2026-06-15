@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
 import type { Root, FileEntry } from '../api/client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
 import { hasNasfilesDrag, isDemoDraggedPath, isDemoDropTarget } from '../lib/fileDrag';
+import { useGlobalDragCleanup } from '../lib/dragState';
 import { UsageRing } from './UsageRing';
 import type { TransferJob } from '../api/client';
 import { TransferProgressIndicator } from './TransferProgressIndicator';
@@ -48,6 +49,7 @@ interface TreeRootProps {
 function TreeRoot({ root, isActive, activePath, onNavigate, onDropFiles, transferJobs }: TreeRootProps) {
   const [expanded, setExpanded] = useState(isActive);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const resetDropTarget = useCallback(() => setIsDropTarget(false), []);
   const isRootActive = isActive && activePath === '';
   const isDemoRootDropTarget = isDemoDropTarget(root.key, '');
   const rootTransferJobs = transferJobsForTarget(transferJobs, root.key, '');
@@ -55,6 +57,8 @@ function TreeRoot({ root, isActive, activePath, onNavigate, onDropFiles, transfe
   useEffect(() => {
     if (isActive) setExpanded(true);
   }, [isActive]);
+
+  useGlobalDragCleanup(resetDropTarget);
 
   const handleClick = () => {
     setExpanded((current) => (isRootActive ? !current : true));
@@ -80,13 +84,13 @@ function TreeRoot({ root, isActive, activePath, onNavigate, onDropFiles, transfe
         }}
         onDragLeave={(e) => {
           if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-          setIsDropTarget(false);
+          resetDropTarget();
         }}
         onDrop={(e) => {
           if (!root.caps.write || !onDropFiles || !hasNasfilesDrag(e.dataTransfer)) return;
           e.preventDefault();
           e.stopPropagation();
-          setIsDropTarget(false);
+          resetDropTarget();
           onDropFiles(root.key, '', e);
         }}
         onKeyDown={(e) => {
@@ -234,6 +238,7 @@ function TreeNode({ rootKey, entry, parentPath, activePath, onNavigate, onDropFi
   const isInActiveLine = activePath.startsWith(fullPath + '/');
   const [expanded, setExpanded] = useState(isInActiveLine);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const resetDropTarget = useCallback(() => setIsDropTarget(false), []);
   const isDemoNodeDropTarget = isDemoDropTarget(rootKey, fullPath);
   const isBeingDragged = isDemoDraggedPath(rootKey, fullPath);
   const nodeTransferJobs = transferJobsForTarget(transferJobs, rootKey, fullPath);
@@ -250,6 +255,8 @@ function TreeNode({ rootKey, entry, parentPath, activePath, onNavigate, onDropFi
   if (isInActiveLine && !expanded) {
     setExpanded(true);
   }
+
+  useGlobalDragCleanup(resetDropTarget);
 
   return (
     <div role="treeitem" aria-expanded={entry.is_dir ? expanded : undefined}>
@@ -270,13 +277,13 @@ function TreeNode({ rootKey, entry, parentPath, activePath, onNavigate, onDropFi
         }}
         onDragLeave={(e) => {
           if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-          setIsDropTarget(false);
+          resetDropTarget();
         }}
         onDrop={(e) => {
           if (!onDropFiles || !hasNasfilesDrag(e.dataTransfer)) return;
           e.preventDefault();
           e.stopPropagation();
-          setIsDropTarget(false);
+          resetDropTarget();
           onDropFiles(rootKey, fullPath, e);
         }}
         onKeyDown={(e) => {

@@ -1,12 +1,12 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 use crate::fs::roots;
 use crate::state::AppState;
@@ -68,6 +68,7 @@ fn resolve_path_with_cap(
         .map_err(|e| FileOpError::Path(e.to_string()))
 }
 
+#[allow(dead_code)]
 async fn entry_size(source: &Path) -> Result<(u64, u64), FileOpError> {
     let metadata = fs::metadata(source).await.map_err(|e| {
         tracing::error!("size metadata failed: {e}");
@@ -113,6 +114,7 @@ async fn entry_size(source: &Path) -> Result<(u64, u64), FileOpError> {
     }
 }
 
+#[allow(dead_code)]
 async fn copy_file_with_progress(
     source: &Path,
     target: &Path,
@@ -161,6 +163,7 @@ async fn copy_file_with_progress(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn demo_transfer_delay() {
     static DELAY: OnceLock<Option<Duration>> = OnceLock::new();
     let delay = DELAY.get_or_init(|| {
@@ -176,6 +179,7 @@ async fn demo_transfer_delay() {
     }
 }
 
+#[allow(dead_code)]
 async fn copy_entry(
     source: &Path,
     target: &Path,
@@ -236,7 +240,8 @@ async fn copy_entry(
                     on_progress(0, 1);
                     pending.push((src_child, dst_child));
                 } else if child_meta.is_file() {
-                    copy_file_with_progress(&src_child, &dst_child, on_progress, is_cancelled).await?;
+                    copy_file_with_progress(&src_child, &dst_child, on_progress, is_cancelled)
+                        .await?;
                 } else {
                     return Err(FileOpError::InvalidPath);
                 }
@@ -351,6 +356,7 @@ pub async fn move_entries(
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub struct TransferProgress {
     pub total_bytes: u64,
     pub transferred_bytes: u64,
@@ -358,6 +364,7 @@ pub struct TransferProgress {
     pub completed_entries: u64,
 }
 
+#[allow(dead_code)]
 pub struct TransferSpec<'a> {
     pub source_root: &'a str,
     pub source_paths: &'a [String],
@@ -367,6 +374,7 @@ pub struct TransferSpec<'a> {
 }
 
 /// Copy or move entries between two roots and report server-side progress.
+#[allow(dead_code)]
 pub async fn transfer_entries_with_progress(
     state: &AppState,
     user: &nasfiles_core::models::AuthUser,
@@ -477,6 +485,7 @@ pub async fn transfer_entries_with_progress(
 }
 
 /// Delete one or more files/directories.
+#[allow(dead_code)]
 pub async fn delete_entries(
     state: &AppState,
     user: &nasfiles_core::models::AuthUser,

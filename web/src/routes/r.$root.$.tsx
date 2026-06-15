@@ -25,6 +25,7 @@ import { ErrorDialog, ErrorToasts } from '../components/ErrorNotice';
 import type { ErrorNoticeData } from '../components/ErrorNotice';
 import { useViewStore } from '../state/view';
 import { getFileDragPayload, hasNasfilesDrag, isDemoDropTarget, isSelfOrDescendantDrop } from '../lib/fileDrag';
+import { useGlobalDragCleanup } from '../lib/dragState';
 import { isActiveTransferJob, transferJobsForTarget } from '../lib/transferJobs';
 import { formatFileSize } from '../lib/icons';
 import type { DirectoryListing, TransferJob } from '../api/client';
@@ -133,6 +134,7 @@ function FileBrowser() {
   const [blockingError, setBlockingError] = useState<ErrorNoticeData | null>(null);
   const [errorToasts, setErrorToasts] = useState<ErrorNoticeData[]>([]);
   const [deleteJobs, setDeleteJobs] = useState<DeleteJobNotice[]>([]);
+  const resetCurrentDropTarget = useCallback(() => setDropTargetActive(false), []);
 
   // Context menu
   const [contextMenu, setContextMenu] = useState<{
@@ -148,6 +150,8 @@ function FileBrowser() {
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
+
+  useGlobalDragCleanup(resetCurrentDropTarget);
 
   const { data: listing, isLoading, error } = useQuery({
     queryKey: ['listing', root, path],
@@ -171,7 +175,7 @@ function FileBrowser() {
     media_preview_transcoding: true,
     media_metadata_probe: true,
   };
-  const demoTransferJobs = useMemo(demoTransferJobsFromLocalStorage, []);
+  const demoTransferJobs = useMemo(() => demoTransferJobsFromLocalStorage(), []);
   const activeTransferJobs = [
     ...(transferJobData?.jobs ?? []).filter(isActiveTransferJob),
     ...demoTransferJobs,
@@ -402,6 +406,8 @@ function FileBrowser() {
   }, [showErrorDialog]);
 
   const handleFileDrop = useCallback((targetRoot: string, targetPath: string, e: React.DragEvent) => {
+    resetCurrentDropTarget();
+
     const payload = getFileDragPayload(e.dataTransfer);
     if (!payload || payload.paths.length === 0) return;
 
@@ -427,7 +433,7 @@ function FileBrowser() {
       destRoot: targetRoot,
       dest: targetPath,
     });
-  }, [executeTransfer, showErrorToast, user?.roots]);
+  }, [executeTransfer, resetCurrentDropTarget, showErrorToast, user?.roots]);
 
   const handleContextMenu = (e: React.MouseEvent, entry: FileEntry) => {
     e.preventDefault();
@@ -589,7 +595,7 @@ function FileBrowser() {
     return entry ? { entry, parentPath: path, path: selectedPath } : null;
   }, [listing, path, selectedPaths, viewMode]);
   const hasReadme = Boolean(listing?.entries.some(isReadmeEntry));
-  const readmeShown = viewMode !== 'columns' && hasReadme && !selectedDetails && !readmeHidden;
+  const readmeShown = viewMode !== 'columns' && hasReadme && !readmeHidden;
   const canShowReadme = viewMode !== 'columns' && hasReadme && !readmeShown;
   const deletePreviewItems = selectedItems.slice(0, 5).map((selectedPath) => {
     const name = selectedPath.split('/').filter(Boolean).pop();
@@ -877,148 +883,163 @@ function FileBrowser() {
             </div>
 
             {/* File listing */}
-            <div
-              ref={listingScrollRef}
-              style={{
-                flex: 1,
-                minHeight: 0,
-                overflow: viewMode === 'columns' ? 'hidden' : 'auto',
-                padding: viewMode === 'columns' ? 0 : 'var(--space-4)',
-                outline: dropTargetActive || isDemoCurrentFolderDropTarget ? '2px dashed var(--color-accent)' : 'none',
-                outlineOffset: -8,
-                background: dropTargetActive || isDemoCurrentFolderDropTarget ? 'var(--color-accent-muted)' : 'transparent',
-              }}
-              className={viewMode === 'columns' ? undefined : 'flex flex-col-reverse lg:flex-row gap-6 items-start'}
-              onDragEnter={(e) => {
-                if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
-                e.preventDefault();
-                setDropTargetActive(true);
-              }}
-              onDragOver={(e) => {
-                if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-              }}
-              onDragLeave={(e) => {
-                if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-                setDropTargetActive(false);
-              }}
-              onDrop={(e) => {
-                if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
-                e.preventDefault();
-                e.stopPropagation();
-                setDropTargetActive(false);
-                handleFileDrop(root, path, e);
-              }}
-            >
+            <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
               <div
-                className={viewMode === 'columns' ? 'flex-1 min-w-0 w-full flex' : 'flex-1 min-w-0 w-full'}
-                style={viewMode === 'columns'
-                  ? { minHeight: 0, height: '100%' }
-                  : { minHeight: '100%', display: 'flex', flexDirection: 'column' }}
+                ref={listingScrollRef}
+                style={{
+                  height: '100%',
+                  minHeight: 0,
+                  overflow: viewMode === 'columns' ? 'hidden' : 'auto',
+                  padding: viewMode === 'columns' ? 0 : 'var(--space-4)',
+                  outline: dropTargetActive || isDemoCurrentFolderDropTarget ? '2px dashed var(--color-accent)' : 'none',
+                  outlineOffset: -8,
+                  background: dropTargetActive || isDemoCurrentFolderDropTarget ? 'var(--color-accent-muted)' : 'transparent',
+                }}
+                className={viewMode === 'columns' ? undefined : 'flex flex-col-reverse lg:flex-row gap-6 items-start'}
+                onDragEnter={(e) => {
+                  if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
+                  e.preventDefault();
+                  setDropTargetActive(true);
+                }}
+                onDragOver={(e) => {
+                  if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                  resetCurrentDropTarget();
+                }}
+                onDrop={(e) => {
+                  if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  resetCurrentDropTarget();
+                  handleFileDrop(root, path, e);
+                }}
               >
-                {viewMode !== 'columns' && isLoading && (
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-                    gap: 'var(--space-4)',
-                  }}>
-                    {Array.from({ length: 12 }).map((_, i) => (
-                      <div key={i} className="shimmer" style={{
-                        height: 140,
-                        borderRadius: 'var(--radius-lg)',
-                      }} />
-                    ))}
-                  </div>
-                )}
+                <div
+                  className={viewMode === 'columns' ? 'flex-1 min-w-0 w-full flex' : 'flex-1 min-w-0 w-full'}
+                  style={viewMode === 'columns'
+                    ? { minHeight: 0, height: '100%' }
+                    : { minHeight: '100%', display: 'flex', flexDirection: 'column' }}
+                >
+                  {viewMode !== 'columns' && isLoading && (
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                      gap: 'var(--space-4)',
+                    }}>
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <div key={i} className="shimmer" style={{
+                          height: 140,
+                          borderRadius: 'var(--radius-lg)',
+                        }} />
+                      ))}
+                    </div>
+                  )}
 
-                {viewMode !== 'columns' && error && (
-                  <EmptyState
-                    iconName="alertTriangle"
-                    title="Failed to load"
-                    description={error instanceof Error ? error.message : 'Unknown error'}
-                  />
-                )}
+                  {viewMode !== 'columns' && error && (
+                    <EmptyState
+                      iconName="alertTriangle"
+                      title="Failed to load"
+                      description={error instanceof Error ? error.message : 'Unknown error'}
+                    />
+                  )}
 
-                {viewMode !== 'columns' && listing && listing.entries.length === 0 && currentFolderTransferJobs.length === 0 && (
-                  <EmptyState
-                    iconName="folderOpen"
-                    title="This folder is empty"
-                    description="Drop files here or create a new folder to get started."
-                  />
-                )}
+                  {viewMode !== 'columns' && listing && listing.entries.length === 0 && currentFolderTransferJobs.length === 0 && (
+                    <EmptyState
+                      iconName="folderOpen"
+                      title="This folder is empty"
+                      description="Drop files here or create a new folder to get started."
+                    />
+                  )}
 
-                {viewMode === 'columns' && user && (
-                  <ColumnBrowser
-                    roots={user.roots}
-                    activeRoot={root}
-                    activePath={path}
-                    currentListing={listing}
-                    isLoading={isLoading}
-                    error={error}
-                    canDrop={caps.write}
-                    onNavigateRoot={navigateToRoot}
-                    onNavigatePath={navigateToPath}
-                    onOpenEntry={openEntryAtPath}
-                    onPreviewEntry={togglePreviewAtPath}
-                    onContextMenu={handleContextMenuAtPath}
-                    onDropFiles={handleFileDrop}
-                    transferJobs={activeTransferJobs}
-                    onDisplayPathChange={handleColumnDisplayPathChange}
-                    onActiveFolderPathChange={handleColumnActiveFolderPathChange}
-                  />
-                )}
+                  {viewMode === 'columns' && user && (
+                    <ColumnBrowser
+                      roots={user.roots}
+                      activeRoot={root}
+                      activePath={path}
+                      currentListing={listing}
+                      isLoading={isLoading}
+                      error={error}
+                      canDrop={caps.write}
+                      onNavigateRoot={navigateToRoot}
+                      onNavigatePath={navigateToPath}
+                      onOpenEntry={openEntryAtPath}
+                      onPreviewEntry={togglePreviewAtPath}
+                      onContextMenu={handleContextMenuAtPath}
+                      onDropFiles={handleFileDrop}
+                      transferJobs={activeTransferJobs}
+                      onDisplayPathChange={handleColumnDisplayPathChange}
+                      onActiveFolderPathChange={handleColumnActiveFolderPathChange}
+                    />
+                  )}
 
-                {viewMode === 'grid' && listing && (listing.entries.length > 0 || currentFolderTransferJobs.length > 0) && (
-                  <FileGrid
-                    entries={listing.entries}
-                    onOpen={navigateTo}
-                    root={root}
-                    path={path}
-                    scrollParentRef={listingScrollRef}
-                    onContextMenu={handleContextMenu}
-                    onDropFiles={handleFileDrop}
-                    transferJobs={activeTransferJobs}
-                  />
-                )}
+                  {viewMode === 'grid' && listing && (listing.entries.length > 0 || currentFolderTransferJobs.length > 0) && (
+                    <FileGrid
+                      entries={listing.entries}
+                      onOpen={navigateTo}
+                      root={root}
+                      path={path}
+                      scrollParentRef={listingScrollRef}
+                      onContextMenu={handleContextMenu}
+                      onDropFiles={handleFileDrop}
+                      transferJobs={activeTransferJobs}
+                    />
+                  )}
 
-                {viewMode === 'list' && listing && (listing.entries.length > 0 || currentFolderTransferJobs.length > 0) && (
-                  <FileList
-                    entries={listing.entries}
-                    onOpen={navigateTo}
-                    root={root}
-                    path={path}
-                    scrollParentRef={listingScrollRef}
-                    onContextMenu={handleContextMenu}
-                    onDropFiles={handleFileDrop}
-                    transferJobs={activeTransferJobs}
-                  />
-                )}
+                  {viewMode === 'list' && listing && (listing.entries.length > 0 || currentFolderTransferJobs.length > 0) && (
+                    <FileList
+                      entries={listing.entries}
+                      onOpen={navigateTo}
+                      root={root}
+                      path={path}
+                      scrollParentRef={listingScrollRef}
+                      onContextMenu={handleContextMenu}
+                      onDropFiles={handleFileDrop}
+                      transferJobs={activeTransferJobs}
+                    />
+                  )}
 
-                {viewMode !== 'columns' && listing && currentRoot?.usage && (
-                  <FreeSpaceFooter
-                    availableBytes={currentRoot.usage.available_bytes}
-                    canShowReadme={canShowReadme}
-                    onShowReadme={() => {
-                      setReadmeHidden(false);
-                      useViewStore.getState().clearSelection();
-                    }}
-                  />
+                  {viewMode !== 'columns' && listing && currentRoot?.usage && (
+                    <FreeSpaceFooter
+                      availableBytes={currentRoot.usage.available_bytes}
+                      canShowReadme={canShowReadme}
+                      onShowReadme={() => {
+                        setReadmeHidden(false);
+                        useViewStore.getState().clearSelection();
+                      }}
+                    />
+                  )}
+                </div>
+
+                {readmeShown && listing && (
+                  <DirectoryReadme entries={listing.entries} root={root} path={path} onClose={() => setReadmeHidden(true)} />
                 )}
               </div>
 
               {viewMode !== 'columns' && selectedDetails && (
-                <FileDetailsPane
-                  root={root}
-                  selected={selectedDetails}
-                  width={400}
-                  onPreview={togglePreviewAtPath}
-                  onClose={() => useViewStore.getState().clearSelection()}
-                />
-              )}
-
-              {readmeShown && listing && (
-                <DirectoryReadme entries={listing.entries} root={root} path={path} onClose={() => setReadmeHidden(true)} />
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'var(--space-4)',
+                    right: 'var(--space-4)',
+                    bottom: 'var(--space-4)',
+                    width: 'min(400px, calc(100% - var(--space-8)))',
+                    zIndex: 15,
+                    borderRadius: 'var(--radius-lg)',
+                    boxShadow: 'var(--shadow-lg)',
+                  }}
+                >
+                  <FileDetailsPane
+                    root={root}
+                    selected={selectedDetails}
+                    width="100%"
+                    onPreview={togglePreviewAtPath}
+                    onClose={() => useViewStore.getState().clearSelection()}
+                  />
+                </div>
               )}
             </div>
           </main>

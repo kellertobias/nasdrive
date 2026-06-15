@@ -8,6 +8,7 @@ import { MiddleEllipsis } from './MiddleEllipsis';
 import { UsageRing } from './UsageRing';
 import { FileDetailsPane } from './FileDetailsPane';
 import { entryPath, hasNasfilesDrag, setFileDragPayload } from '../lib/fileDrag';
+import { useGlobalDragCleanup } from '../lib/dragState';
 import { getFileIcon } from '../lib/icons';
 import { useViewStore } from '../state/view';
 import { TransferProgressIndicator } from './TransferProgressIndicator';
@@ -540,6 +541,7 @@ function FolderColumnView({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const resetDropTarget = useCallback(() => setIsDropTarget(false), []);
   const columnTransferJobs = transferJobsForTarget(transferJobs, root, column.path);
   const transferPlaceholders = incomingTransferPlaceholders(
     transferJobs,
@@ -565,6 +567,8 @@ function FolderColumnView({
     });
   }, [focusedRow, rowVirtualizer]);
 
+  useGlobalDragCleanup(resetDropTarget);
+
   return (
     <section
       ref={refCallback}
@@ -581,13 +585,13 @@ function FolderColumnView({
       }}
       onDragLeave={(e) => {
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setIsDropTarget(false);
+        resetDropTarget();
       }}
       onDrop={(e) => {
         if (!canDrop || !hasNasfilesDrag(e.dataTransfer)) return;
         e.preventDefault();
         e.stopPropagation();
-        setIsDropTarget(false);
+        resetDropTarget();
         onDropFiles(root, column.path, e);
       }}
       style={{
@@ -784,11 +788,14 @@ function ColumnEntryRow({
   onDropFiles: (targetRoot: string, targetPath: string, e: React.DragEvent) => void;
 }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const resetDropTarget = useCallback(() => setIsDropTarget(false), []);
   const icon = getFileIcon(entry);
   const rowTransferJobs = entry.is_dir ? transferJobsForTarget(transferJobs, root, fullPath) : [];
   const sourceMoveJobs = entry.is_dir ? moveJobsForSourcePath(transferJobs, root, fullPath) : [];
   const isBeingMoved = sourceMoveJobs.length > 0;
   const displayedTransferJobs = isBeingMoved ? sourceMoveJobs : rowTransferJobs;
+
+  useGlobalDragCleanup(resetDropTarget);
 
   return (
     <button
@@ -839,7 +846,7 @@ function ColumnEntryRow({
           iconColor: icon.color,
         });
       }}
-      onDragEnd={() => setIsDropTarget(false)}
+      onDragEnd={resetDropTarget}
       onDragEnter={(e) => {
         if (!entry.is_dir || !canDrop || !hasNasfilesDrag(e.dataTransfer)) return;
         e.preventDefault();
@@ -854,13 +861,13 @@ function ColumnEntryRow({
       }}
       onDragLeave={(e) => {
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setIsDropTarget(false);
+        resetDropTarget();
       }}
       onDrop={(e) => {
         if (!entry.is_dir || !canDrop || !hasNasfilesDrag(e.dataTransfer)) return;
         e.preventDefault();
         e.stopPropagation();
-        setIsDropTarget(false);
+        resetDropTarget();
         onDropFiles(root, entryPath(path, entry.name), e);
       }}
       style={{

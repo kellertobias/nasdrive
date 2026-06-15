@@ -242,12 +242,12 @@ export interface TreeListing {
 
 export interface TransferJob {
   id: string;
-  operation: 'move' | 'copy';
+  operation: 'move' | 'copy' | 'delete';
   source_root: string;
   dest_root: string;
   dest_path: string;
   paths: string[];
-  status: 'queued' | 'running' | 'done' | 'error' | 'canceled';
+  status: 'queued' | 'running' | 'paused_needs_confirmation' | 'done' | 'error' | 'canceled';
   total_bytes: number;
   transferred_bytes: number;
   total_entries: number;
@@ -497,8 +497,23 @@ export const api = {
       method: 'POST',
     }),
 
+  resumeFileJob: (jobId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/file-jobs/${encodeURIComponent(jobId)}/resume`, {
+      method: 'POST',
+    }),
+
+  cancelFileJob: (jobId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/file-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+    }),
+
+  cleanupFileJob: (jobId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/file-jobs/${encodeURIComponent(jobId)}/cleanup`, {
+      method: 'POST',
+    }),
+
   deleteEntries: (root: string, paths: string[]) =>
-    apiFetch<{ ok: boolean }>(`/api/files/${encodeURIComponent(root)}/delete`, {
+    apiFetch<{ ok: boolean; job_id: string }>(`/api/files/${encodeURIComponent(root)}/delete`, {
       method: 'POST',
       body: JSON.stringify({ paths }),
     }),

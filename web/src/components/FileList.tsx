@@ -3,9 +3,10 @@ import { getFileIcon, formatFileSize, formatModifiedDate } from '../lib/icons';
 import { useViewStore } from '../state/view';
 import { MiddleEllipsis } from './MiddleEllipsis';
 import { FileIcon } from './Icon';
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { entryPath, hasNasfilesDrag, isDemoDraggedPath, isDemoDragHoverPath, isDemoDropTarget, setFileDragPayload } from '../lib/fileDrag';
+import { useGlobalDragCleanup } from '../lib/dragState';
 import type { TransferJob } from '../api/client';
 import { TransferProgressIndicator } from './TransferProgressIndicator';
 import { incomingTransferPlaceholders, moveJobsForSourcePath, transferJobsForTarget, transferProgressPercent } from '../lib/transferJobs';
@@ -32,6 +33,7 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
   const lastClickedIndex = useRef<number>(-1);
   const listRef = useRef<HTMLDivElement>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const resetDropTarget = useCallback(() => setDropTarget(null), []);
   const transferPlaceholders = incomingTransferPlaceholders(
     transferJobs,
     root,
@@ -71,6 +73,8 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
     estimateSize: () => LIST_ROW_HEIGHT,
     overscan: 12,
   });
+
+  useGlobalDragCleanup(resetDropTarget);
 
   const columnHeaderStyle = (field: string): React.CSSProperties => ({
     padding: 'var(--space-2) var(--space-3)',
@@ -248,7 +252,7 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
                 iconColor: icon.color,
               });
             }}
-            onDragEnd={() => setDropTarget(null)}
+            onDragEnd={resetDropTarget}
             onClick={(e) => {
               if (e.shiftKey && lastClickedIndex.current >= 0) {
                 const lo = Math.min(lastClickedIndex.current, index);
@@ -281,13 +285,13 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
             }}
             onDragLeave={(e) => {
               if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-              setDropTarget(null);
+              resetDropTarget();
             }}
             onDrop={(e) => {
               if (!entry.is_dir || !root || !onDropFiles || !hasNasfilesDrag(e.dataTransfer)) return;
               e.preventDefault();
               e.stopPropagation();
-              setDropTarget(null);
+              resetDropTarget();
               onDropFiles(root, filePath, e);
             }}
             onKeyDown={(e) => {

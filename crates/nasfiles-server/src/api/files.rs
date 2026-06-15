@@ -7,8 +7,8 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
-use crate::fs::{archive, image_info, listing, media_info, ops, roots, stream, zip};
-use crate::state::{AppState, TransferJob, TransferJobStatus, now_ms};
+use crate::fs::{archive, file_jobs, image_info, listing, media_info, ops, roots, stream, zip};
+use crate::state::AppState;
 use crate::thumb::kind;
 
 /// GET /api/roots — list available roots for the current user.
@@ -361,81 +361,18 @@ pub async fn transfer_entries(
     Path(root_key): Path<String>,
     Json(body): Json<ops::TransferRequest>,
 ) -> Result<impl IntoResponse, ops::FileOpError> {
-    let job_id = uuid::Uuid::new_v4().to_string();
-    let now = now_ms();
-    let job = TransferJob {
-        id: job_id.clone(),
-        owner_user_id: user.user_id.clone(),
-        operation: body.operation.as_str().to_string(),
-        source_root: root_key.clone(),
-        dest_root: body.dest_root.clone(),
-        dest_path: body.dest.clone(),
-        paths: body.paths.clone(),
-        status: TransferJobStatus::Queued,
-        total_bytes: 0,
-        transferred_bytes: 0,
-        total_entries: 0,
-        completed_entries: 0,
-        error: None,
-        created_at: now,
-        updated_at: now,
-        finished_at: None,
-        cancel_requested: false,
-    };
-    state.transfer_jobs.insert(job);
-
-    let task_state = state.clone();
-    let task_user = user.clone();
-    let task_root = root_key;
-    let task_body = body;
-    let task_job_id = job_id.clone();
-
-    tokio::spawn(async move {
-        task_state.transfer_jobs.update(&task_job_id, |job| {
-            job.status = TransferJobStatus::Running;
-        });
-
-        let result = ops::transfer_entries_with_progress(
-            &task_state,
-            &task_user,
-            ops::TransferSpec {
-                source_root: &task_root,
-                source_paths: &task_body.paths,
-                dest_root: &task_body.dest_root,
-                dest_path: &task_body.dest,
-                operation: task_body.operation,
-            },
-            |progress| {
-                task_state.transfer_jobs.update(&task_job_id, |job| {
-                    job.total_bytes = progress.total_bytes;
-                    job.transferred_bytes = progress.transferred_bytes;
-                    job.total_entries = progress.total_entries;
-                    job.completed_entries = progress.completed_entries;
-                });
-            },
-            || task_state.transfer_jobs.is_cancel_requested(&task_job_id),
+    let job_id = state
+        .file_jobs
+        .create_transfer_job(
+            &user,
+            &root_key,
+            &body.paths,
+            &body.dest_root,
+            &body.dest,
+            body.operation,
         )
-        .await;
-
-        task_state.transfer_jobs.update(&task_job_id, |job| {
-            job.finished_at = Some(now_ms());
-            match result {
-                Ok(()) => {
-                    job.status = TransferJobStatus::Done;
-                    job.transferred_bytes = job.total_bytes;
-                    job.completed_entries = job.total_entries;
-                }
-                Err(ops::FileOpError::Cancelled) => {
-                    job.status = TransferJobStatus::Canceled;
-                    job.error = None;
-                }
-                Err(err) => {
-                    job.status = TransferJobStatus::Error;
-                    job.error = Some(err.to_string());
-                }
-            }
-        });
-    });
+        .await?;
+    file_jobs::spawn_file_job(state.clone(), job_id.clone());
 
     Ok(Json(serde_json::json!({"ok": true, "job_id": job_id})))
 }
@@ -446,7 +383,10 @@ pub async fn cancel_transfer_job(
     CurrentUser(user): CurrentUser,
     Path(job_id): Path<String>,
 ) -> Result<impl IntoResponse, ops::FileOpError> {
-    let ok = state.transfer_jobs.cancel_for_user(&job_id, &user.user_id);
+    let ok = state
+        .file_jobs
+        .cancel_for_user(&job_id, &user.user_id)
+        .await?;
     Ok(Json(serde_json::json!({ "ok": ok })))
 }
 
@@ -455,8 +395,50 @@ pub async fn list_transfer_jobs(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
 ) -> Result<impl IntoResponse, ops::FileOpError> {
-    let jobs = state.transfer_jobs.list_for_user(&user.user_id);
+    let jobs = state.file_jobs.list_for_user(&user.user_id).await?;
     Ok(Json(serde_json::json!({ "jobs": jobs })))
+}
+
+/// POST /api/file-jobs/:job_id/resume — resume a paused/recoverable file job.
+pub async fn resume_file_job(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(job_id): Path<String>,
+) -> Result<impl IntoResponse, ops::FileOpError> {
+    let ok = state
+        .file_jobs
+        .resume_for_user(&job_id, &user.user_id)
+        .await?;
+    if ok {
+        file_jobs::spawn_file_job(state.clone(), job_id);
+    }
+    Ok(Json(serde_json::json!({ "ok": ok })))
+}
+
+/// POST /api/file-jobs/:job_id/cancel — cancel a queued/running/paused file job.
+pub async fn cancel_file_job(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(job_id): Path<String>,
+) -> Result<impl IntoResponse, ops::FileOpError> {
+    let ok = state
+        .file_jobs
+        .cancel_for_user(&job_id, &user.user_id)
+        .await?;
+    Ok(Json(serde_json::json!({ "ok": ok })))
+}
+
+/// POST /api/file-jobs/:job_id/cleanup — mark a non-running recovered job as cleaned up.
+pub async fn cleanup_file_job(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(job_id): Path<String>,
+) -> Result<impl IntoResponse, ops::FileOpError> {
+    let ok = state
+        .file_jobs
+        .cleanup_for_user(&state.config, &job_id, &user.user_id)
+        .await?;
+    Ok(Json(serde_json::json!({ "ok": ok })))
 }
 
 /// POST /api/files/:root/delete — delete files/directories.
@@ -466,8 +448,12 @@ pub async fn delete_entries(
     Path(root_key): Path<String>,
     Json(body): Json<ops::DeleteRequest>,
 ) -> Result<impl IntoResponse, ops::FileOpError> {
-    ops::delete_entries(&state, &user, &root_key, &body.paths).await?;
-    Ok(Json(serde_json::json!({"ok": true})))
+    let job_id = state
+        .file_jobs
+        .create_delete_job(&user, &root_key, &body.paths)
+        .await?;
+    file_jobs::spawn_file_job(state.clone(), job_id.clone());
+    Ok(Json(serde_json::json!({"ok": true, "job_id": job_id})))
 }
 
 /// POST /api/files/:root/upload?path=... — upload files (multipart/form-data).

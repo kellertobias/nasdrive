@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FileEntry } from '../api/client';
 import { getFileIcon, formatFileSize, hasThumbnail } from '../lib/icons';
@@ -7,6 +7,7 @@ import { MiddleEllipsis } from './MiddleEllipsis';
 import { FileIcon } from './Icon';
 import { ThumbnailImage } from './ThumbnailImage';
 import { entryPath, hasNasfilesDrag, isDemoDraggedPath, isDemoDragHoverPath, isDemoDropTarget, setFileDragPayload } from '../lib/fileDrag';
+import { useGlobalDragCleanup } from '../lib/dragState';
 import type { TransferJob } from '../api/client';
 import { TransferProgressIndicator } from './TransferProgressIndicator';
 import { incomingTransferPlaceholders, moveJobsForSourcePath, transferJobsForTarget, transferProgressPercent } from '../lib/transferJobs';
@@ -52,6 +53,7 @@ function useElementWidth(ref: React.RefObject<HTMLElement | null>) {
 export function FileGrid({ entries, onOpen, root = '', path, scrollParentRef, onContextMenu, onDropFiles, transferJobs = [] }: FileGridProps) {
   const { selectedPaths, select, toggleSelect, rangeSelect, clearSelection } = useViewStore();
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const resetDropTarget = useCallback(() => setDropTarget(null), []);
   const gridRef = useRef<HTMLDivElement>(null);
   const gridWidth = useElementWidth(gridRef);
   const transferPlaceholders = incomingTransferPlaceholders(
@@ -78,6 +80,8 @@ export function FileGrid({ entries, onOpen, root = '', path, scrollParentRef, on
   });
   // Track the last-clicked item index for shift-range selection
   const lastClickedIndex = useRef<number>(-1);
+
+  useGlobalDragCleanup(resetDropTarget);
 
   return (
     <div
@@ -201,7 +205,7 @@ export function FileGrid({ entries, onOpen, root = '', path, scrollParentRef, on
                 iconColor: icon.color,
               });
             }}
-            onDragEnd={() => setDropTarget(null)}
+            onDragEnd={resetDropTarget}
             onClick={(e) => {
               e.stopPropagation();
               if (e.shiftKey && lastClickedIndex.current >= 0) {
@@ -236,13 +240,13 @@ export function FileGrid({ entries, onOpen, root = '', path, scrollParentRef, on
             }}
             onDragLeave={(e) => {
               if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-              setDropTarget(null);
+              resetDropTarget();
             }}
             onDrop={(e) => {
               if (!entry.is_dir || !root || !onDropFiles || !hasNasfilesDrag(e.dataTransfer)) return;
               e.preventDefault();
               e.stopPropagation();
-              setDropTarget(null);
+              resetDropTarget();
               onDropFiles(root, filePath, e);
             }}
             onKeyDown={(e) => {

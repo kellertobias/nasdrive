@@ -5,7 +5,13 @@ export function isActiveTransferJob(job: TransferJob) {
 }
 
 export function transferJobsForTarget(jobs: TransferJob[], root: string, path: string) {
-  return jobs.filter((job) => isActiveTransferJob(job) && job.dest_root === root && job.dest_path === path);
+  return jobs.filter(
+    (job) =>
+      isActiveTransferJob(job) &&
+      (job.operation === 'copy' || job.operation === 'move') &&
+      job.dest_root === root &&
+      job.dest_path === path,
+  );
 }
 
 export function moveJobsForSourcePath(jobs: TransferJob[], root: string, path: string) {
@@ -48,7 +54,13 @@ export function incomingTransferPlaceholders(
 ) {
   const existing = new Set(existingNames);
   return jobs
-    .filter((job) => isActiveTransferJob(job) && job.dest_root === root && job.dest_path === path)
+    .filter(
+      (job) =>
+        isActiveTransferJob(job) &&
+        (job.operation === 'copy' || job.operation === 'move') &&
+        job.dest_root === root &&
+        job.dest_path === path,
+    )
     .flatMap((job) =>
       job.paths
         .map((sourcePath) => {
