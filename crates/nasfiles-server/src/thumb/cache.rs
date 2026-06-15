@@ -137,6 +137,7 @@ impl ThumbnailCache {
         root_key: &str,
         relative_path: &str,
         width: u32,
+        requested_format: Option<ThumbFormat>,
         config: &AppConfig,
     ) -> Result<Option<Thumbnail>, ThumbError> {
         // Get file metadata for cache key
@@ -154,10 +155,10 @@ impl ThumbnailCache {
         let Some(kind) = ThumbnailKind::from_path(source_path) else {
             return Ok(None);
         };
-        let format = if kind == ThumbnailKind::Svg {
-            ThumbFormat::Png
-        } else {
-            ThumbFormat::Jpeg
+        let format = match (kind, requested_format) {
+            (ThumbnailKind::Image | ThumbnailKind::Svg, Some(format)) => format,
+            (ThumbnailKind::Svg, None) => ThumbFormat::Png,
+            _ => ThumbFormat::Jpeg,
         };
 
         let key = Self::thumbnail_cache_key(ThumbnailCacheKeyInput {
@@ -233,6 +234,7 @@ impl ThumbnailCache {
                 img_thumb::generate(
                     source_path,
                     width,
+                    format,
                     config.thumbnail_max_image_width,
                     config.thumbnail_max_image_height,
                     config.thumbnail_max_image_alloc,
@@ -501,6 +503,8 @@ mod tests {
             dev_mode: true,
             auth_mode: crate::config::AuthMode::Sso,
             no_server_side_execution: false,
+            csp_extra_img_src: Vec::new(),
+            csp_extra_media_src: Vec::new(),
             db_url: String::new(),
             common_folders: HashMap::new(),
             home_folder_root: None,

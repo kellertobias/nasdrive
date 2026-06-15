@@ -67,6 +67,28 @@ impl TransferJobStore {
         }
     }
 
+    pub fn cancel_for_user(&self, id: &str, user_id: &str) -> bool {
+        if let Some(mut job) = self.jobs.get_mut(id) {
+            if job.owner_user_id != user_id {
+                return false;
+            }
+            if !matches!(job.status, TransferJobStatus::Queued | TransferJobStatus::Running) {
+                return false;
+            }
+            job.cancel_requested = true;
+            job.updated_at = now_ms();
+            return true;
+        }
+        false
+    }
+
+    pub fn is_cancel_requested(&self, id: &str) -> bool {
+        self.jobs
+            .get(id)
+            .map(|job| job.cancel_requested)
+            .unwrap_or(false)
+    }
+
     pub fn list_for_user(&self, user_id: &str) -> Vec<TransferJob> {
         let mut jobs: Vec<_> = self
             .jobs
@@ -99,6 +121,8 @@ pub struct TransferJob {
     pub created_at: i64,
     pub updated_at: i64,
     pub finished_at: Option<i64>,
+    #[serde(default)]
+    pub cancel_requested: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -108,6 +132,7 @@ pub enum TransferJobStatus {
     Running,
     Done,
     Error,
+    Canceled,
 }
 
 pub fn now_ms() -> i64 {

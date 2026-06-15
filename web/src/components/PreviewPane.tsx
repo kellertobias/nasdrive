@@ -32,9 +32,13 @@ export function PreviewPane({
   const isMediaPreview = previewType === 'video' || previewType === 'audio';
   const [fileInfo, setFileInfo] = useState<FileEntry | null>(null);
   const downloadUrl = api.downloadUrl(root, entryPath);
-  const imagePreviewUrl = entry.name.toLowerCase().endsWith('.svg') && entry.has_thumbnail
-    ? api.thumbnailUrl(root, entryPath, 960, entry)
+  const imagePreviewFormat = transparentPreviewFormat(entry.name);
+  const imagePreviewUrl = previewType === 'image' && entry.has_thumbnail
+    ? api.thumbnailUrl(root, entryPath, 1920, entry, 0, imagePreviewFormat)
     : downloadUrl;
+  const audioCoverUrl = previewType === 'audio' && entry.has_thumbnail
+    ? api.thumbnailUrl(root, entryPath, 720, entry)
+    : null;
   const loadMediaInfo = useCallback(() => api.fileInfo(root, entryPath), [entryPath, root]);
   const createMediaPreviewUrl = useCallback(
     (session: string) => api.previewUrl(root, entryPath, session),
@@ -45,7 +49,9 @@ export function PreviewPane({
     [entryPath, root],
   );
   const mediaInfo = fileInfo?.media_info ?? entry.media_info ?? null;
+  const imageInfo = fileInfo?.image_info ?? entry.image_info ?? null;
   const mediaDetails = mediaInfo ? formatMediaDetails(mediaInfo) : [];
+  const imageDetails = imageInfo ? formatImageDetails(imageInfo) : [];
 
   // Find current index for prev/next navigation
   const fileEntries = entries.filter((e) => !e.is_dir);
@@ -72,10 +78,10 @@ export function PreviewPane({
       if (e.key === 'Escape' || ((e.key === ' ' || e.key === 'Space' || e.key === 'Spacebar') && !e.repeat)) {
         e.preventDefault();
         onClose();
-      } else if (e.key === 'ArrowLeft') {
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault();
         navigatePrev();
-      } else if (e.key === 'ArrowRight') {
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
         navigateNext();
       }
@@ -86,7 +92,7 @@ export function PreviewPane({
 
   useEffect(() => {
     setFileInfo(null);
-    if (previewType !== 'video' && previewType !== 'audio') return;
+    if (previewType !== 'video' && previewType !== 'audio' && previewType !== 'image') return;
 
     let cancelled = false;
     loadMediaInfo()
@@ -182,6 +188,18 @@ export function PreviewPane({
               {detail}
             </span>
           ))}
+          {imageDetails.map((detail) => (
+            <span
+              key={detail}
+              style={{
+                fontSize: 'var(--text-xs)',
+                color: 'rgba(255,255,255,0.5)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {detail}
+            </span>
+          ))}
           {fileEntries.length > 1 && (
             <span style={{
               fontSize: 'var(--text-xs)',
@@ -264,6 +282,7 @@ export function PreviewPane({
             entry={entry}
             kind="audio"
             actualUrl={downloadUrl}
+            coverArtUrl={audioCoverUrl}
             canTranscode={mediaPreviewTranscodingEnabled}
             createPreviewUrl={createMediaPreviewUrl}
             loadPreviewStatus={loadMediaPreviewStatus}
@@ -302,6 +321,25 @@ function formatMediaDetails(info: NonNullable<FileEntry['media_info']>): string[
   }
 
   return details;
+}
+
+function formatImageDetails(info: NonNullable<FileEntry['image_info']>): string[] {
+  const details = [`${info.width}x${info.height}`];
+
+  if (info.format) details.push(info.format);
+  if (info.has_alpha) details.push('transparent');
+
+  const exif = info.exif ?? {};
+  const camera = [exif.Make, exif.Model].filter(Boolean).join(' ');
+  if (camera) details.push(camera);
+  if (exif.DateTimeOriginal || exif.DateTime) details.push(exif.DateTimeOriginal || exif.DateTime);
+
+  return details;
+}
+
+function transparentPreviewFormat(name: string): 'jpeg' | 'png' {
+  const ext = name.split('.').pop()?.toLowerCase();
+  return ext === 'png' || ext === 'webp' || ext === 'gif' || ext === 'svg' ? 'png' : 'jpeg';
 }
 
 function formatDuration(durationMs: number): string {
@@ -387,6 +425,7 @@ function ImagePreview({ url, name }: { url: string; name: string }) {
         justifyContent: 'center',
         cursor: scale > 1 ? (dragging.current ? 'grabbing' : 'grab') : 'zoom-in',
         overflow: 'hidden',
+        backgroundColor: 'rgba(255,255,255,0.02)',
       }}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
@@ -412,6 +451,11 @@ function ImagePreview({ url, name }: { url: string; name: string }) {
           opacity: loaded ? 1 : 0,
           userSelect: 'none',
           pointerEvents: 'none',
+          backgroundColor: '#fff',
+          backgroundImage:
+            'linear-gradient(45deg, rgba(0,0,0,0.18) 25%, transparent 25%), linear-gradient(-45deg, rgba(0,0,0,0.18) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.18) 75%), linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.18) 75%)',
+          backgroundSize: '20px 20px',
+          backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0',
         }}
         draggable={false}
       />

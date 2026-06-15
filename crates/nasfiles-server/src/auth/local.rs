@@ -1906,6 +1906,8 @@ mod tests {
             dev_mode: true,
             auth_mode: AuthMode::Local,
             no_server_side_execution: false,
+            csp_extra_img_src: Vec::new(),
+            csp_extra_media_src: Vec::new(),
             db_url: String::new(),
             common_folders,
             home_folder_root: Some(PathBuf::from("/home")),

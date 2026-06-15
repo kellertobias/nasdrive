@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use super::cache::ThumbError;
+use super::cache::ThumbFormat;
 
 /// Generate a JPEG thumbnail from an image file.
 ///
@@ -12,6 +13,7 @@ use super::cache::ThumbError;
 pub async fn generate(
     source_path: &Path,
     width: u32,
+    format: ThumbFormat,
     max_image_width: u32,
     max_image_height: u32,
     max_alloc: u64,
@@ -30,7 +32,7 @@ pub async fn generate(
             .decode()
             .map_err(|e| ThumbError::Image(e.to_string()))?;
 
-        resize_and_encode(img, width)
+        resize_and_encode(img, width, format)
     })
     .await
     .map_err(|e| ThumbError::Image(format!("task join error: {e}")))?;
@@ -59,7 +61,7 @@ pub async fn generate_from_bytes(
             .decode()
             .map_err(|e| ThumbError::Image(e.to_string()))?;
 
-        resize_and_encode(img, width)
+        resize_and_encode(img, width, ThumbFormat::Jpeg)
     })
     .await
     .map_err(|e| ThumbError::Image(format!("task join error: {e}")))?;
@@ -67,11 +69,23 @@ pub async fn generate_from_bytes(
     result.map(Some)
 }
 
-fn resize_and_encode(img: ::image::DynamicImage, width: u32) -> Result<Vec<u8>, ThumbError> {
-    let thumb = img.thumbnail(width, width).to_rgb8();
+fn resize_and_encode(
+    img: ::image::DynamicImage,
+    width: u32,
+    format: ThumbFormat,
+) -> Result<Vec<u8>, ThumbError> {
+    let thumb = img.thumbnail(width, width);
     let mut buf = Cursor::new(Vec::new());
-    ::image::DynamicImage::ImageRgb8(thumb)
-        .write_to(&mut buf, ::image::ImageFormat::Jpeg)
+    let output = match format {
+        ThumbFormat::Jpeg => ::image::DynamicImage::ImageRgb8(thumb.to_rgb8()),
+        ThumbFormat::Png => ::image::DynamicImage::ImageRgba8(thumb.to_rgba8()),
+    };
+    let image_format = match format {
+        ThumbFormat::Jpeg => ::image::ImageFormat::Jpeg,
+        ThumbFormat::Png => ::image::ImageFormat::Png,
+    };
+    output
+        .write_to(&mut buf, image_format)
         .map_err(|e| ThumbError::Image(e.to_string()))?;
     Ok(buf.into_inner())
 }

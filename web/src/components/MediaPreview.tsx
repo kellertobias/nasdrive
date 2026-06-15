@@ -15,6 +15,7 @@ interface MediaPreviewProps {
   entry: FileEntry;
   kind: MediaKind;
   actualUrl: string;
+  coverArtUrl?: string | null;
   canTranscode: boolean;
   createPreviewUrl: (session: string) => string;
   loadPreviewStatus: (session: string) => Promise<PreviewStatus>;
@@ -43,6 +44,7 @@ export function MediaPreview({
   entry,
   kind,
   actualUrl,
+  coverArtUrl,
   canTranscode,
   createPreviewUrl,
   loadPreviewStatus,
@@ -234,7 +236,7 @@ export function MediaPreview({
       >
         {kind === 'audio' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <Icon name="music" size={56} color="rgba(255,255,255,0.55)" />
+            <AudioCoverArt url={coverArtUrl} name={effectiveEntry.name} />
             <div style={titleStyle}>{effectiveEntry.name}</div>
           </div>
         )}
@@ -263,6 +265,36 @@ export function MediaPreview({
         />
       )}
     </div>
+  );
+}
+
+function AudioCoverArt({ url, name }: { url?: string | null; name: string }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [url]);
+
+  if (!url || failed) {
+    return <Icon name="music" size={56} color="rgba(255,255,255,0.55)" />;
+  }
+
+  return (
+    <img
+      src={url}
+      alt=""
+      title={name}
+      onError={() => setFailed(true)}
+      style={{
+        width: 220,
+        maxWidth: '52vw',
+        aspectRatio: '1 / 1',
+        objectFit: 'cover',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+        background: 'rgba(255,255,255,0.08)',
+      }}
+    />
   );
 }
 

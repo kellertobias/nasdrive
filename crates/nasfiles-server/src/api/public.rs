@@ -6,7 +6,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::fs::{listing, media_info, stream};
+use crate::fs::{image_info, listing, media_info, stream};
 use crate::shares::{access, audit, bearer, model::ShareAuthRequest};
 use crate::state::AppState;
 use crate::thumb::kind;
@@ -330,6 +330,42 @@ pub async fn share_info(
         None
     };
 
+    let image_info = if !state.config.no_server_side_execution
+        && !is_dir
+        && mime_type.as_ref().is_some_and(|m| m.starts_with("image/"))
+    {
+        let cache_relative_path = if share.relative_path.is_empty() {
+            query.path.clone()
+        } else if query.path.is_empty() {
+            share.relative_path.clone()
+        } else {
+            format!("{}/{}", share.relative_path, query.path)
+        };
+        match image_info::get_or_probe(
+            &state.config.thumbnail_cache_dir,
+            &resolved,
+            &share.root_kind,
+            &share.root_key,
+            &cache_relative_path,
+            state.config.thumbnail_max_image_width,
+            state.config.thumbnail_max_image_height,
+            state.config.thumbnail_max_image_alloc,
+        )
+        .await
+        {
+            Ok(info) => info,
+            Err(e) => {
+                tracing::warn!(
+                    "failed to read shared image info for {}: {e}",
+                    resolved.display()
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     Json(serde_json::json!({
         "name": name,
         "size": size,
@@ -338,6 +374,7 @@ pub async fn share_info(
         "mime_type": mime_type,
         "has_thumbnail": has_thumbnail,
         "media_info": media_info,
+        "image_info": image_info,
         "path": query.path,
     }))
     .into_response()

@@ -117,6 +117,7 @@ async fn copy_file_with_progress(
     source: &Path,
     target: &Path,
     on_progress: &(dyn Fn(u64, u64) + Sync),
+    is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<(), FileOpError> {
     if target.exists() {
         return Err(FileOpError::AlreadyExists);
@@ -133,6 +134,9 @@ async fn copy_file_with_progress(
     let mut buffer = vec![0u8; 1024 * 1024];
 
     loop {
+        if is_cancelled() {
+            return Err(FileOpError::Cancelled);
+        }
         let read = src.read(&mut buffer).await.map_err(|e| {
             tracing::error!("copy read failed: {e}");
             FileOpError::Io(e.to_string())
@@ -176,7 +180,11 @@ async fn copy_entry(
     source: &Path,
     target: &Path,
     on_progress: &(dyn Fn(u64, u64) + Sync),
+    is_cancelled: &(dyn Fn() -> bool + Sync),
 ) -> Result<(), FileOpError> {
+    if is_cancelled() {
+        return Err(FileOpError::Cancelled);
+    }
     if target.exists() {
         return Err(FileOpError::AlreadyExists);
     }
@@ -195,6 +203,9 @@ async fn copy_entry(
 
         let mut pending = vec![(source.to_path_buf(), target.to_path_buf())];
         while let Some((src_dir, dst_dir)) = pending.pop() {
+            if is_cancelled() {
+                return Err(FileOpError::Cancelled);
+            }
             let mut entries = fs::read_dir(&src_dir).await.map_err(|e| {
                 tracing::error!("copy read_dir failed: {e}");
                 FileOpError::Io(e.to_string())
@@ -204,6 +215,9 @@ async fn copy_entry(
                 tracing::error!("copy next_entry failed: {e}");
                 FileOpError::Io(e.to_string())
             })? {
+                if is_cancelled() {
+                    return Err(FileOpError::Cancelled);
+                }
                 let src_child = entry.path();
                 let dst_child = dst_dir.join(entry.file_name());
                 let child_meta = entry.metadata().await.map_err(|e| {
@@ -222,14 +236,14 @@ async fn copy_entry(
                     on_progress(0, 1);
                     pending.push((src_child, dst_child));
                 } else if child_meta.is_file() {
-                    copy_file_with_progress(&src_child, &dst_child, on_progress).await?;
+                    copy_file_with_progress(&src_child, &dst_child, on_progress, is_cancelled).await?;
                 } else {
                     return Err(FileOpError::InvalidPath);
                 }
             }
         }
     } else if metadata.is_file() {
-        copy_file_with_progress(source, target, on_progress).await?;
+        copy_file_with_progress(source, target, on_progress, is_cancelled).await?;
     } else {
         return Err(FileOpError::InvalidPath);
     }
@@ -358,6 +372,7 @@ pub async fn transfer_entries_with_progress(
     user: &nasfiles_core::models::AuthUser,
     spec: TransferSpec<'_>,
     progress: impl Fn(TransferProgress) + Sync,
+    is_cancelled: impl Fn() -> bool + Sync,
 ) -> Result<(), FileOpError> {
     let source_cap = match spec.operation {
         TransferOperation::Copy => roots::RequiredCap::Read,
@@ -380,6 +395,9 @@ pub async fn transfer_entries_with_progress(
     let mut total_entries = 0;
 
     for src_path in spec.source_paths {
+        if is_cancelled() {
+            return Err(FileOpError::Cancelled);
+        }
         let source =
             resolve_path_with_cap(&state.config, user, spec.source_root, src_path, source_cap)?;
 
@@ -424,6 +442,9 @@ pub async fn transfer_entries_with_progress(
     };
 
     for (source, target, name) in planned {
+        if is_cancelled() {
+            return Err(FileOpError::Cancelled);
+        }
         if spec.source_root == spec.dest_root && spec.operation == TransferOperation::Move {
             fs::rename(&source, &target).await.map_err(|e| {
                 tracing::error!("transfer move failed for {:?}: {e}", name);
@@ -432,7 +453,10 @@ pub async fn transfer_entries_with_progress(
             let (bytes, entries) = entry_size(&target).await?;
             on_progress(bytes, entries);
         } else {
-            copy_entry(&source, &target, &on_progress).await?;
+            copy_entry(&source, &target, &on_progress, &is_cancelled).await?;
+            if is_cancelled() {
+                return Err(FileOpError::Cancelled);
+            }
             if spec.operation == TransferOperation::Move {
                 if source.is_dir() {
                     fs::remove_dir_all(&source).await.map_err(|e| {
@@ -581,6 +605,8 @@ pub enum FileOpError {
     InvalidPath,
     #[error("file too large")]
     TooLarge,
+    #[error("operation canceled")]
+    Cancelled,
     #[error("I/O error: {0}")]
     Io(String),
 }
@@ -595,6 +621,7 @@ impl IntoResponse for FileOpError {
             FileOpError::NotDirectory => (axum::http::StatusCode::BAD_REQUEST, self.to_string()),
             FileOpError::InvalidPath => (axum::http::StatusCode::BAD_REQUEST, self.to_string()),
             FileOpError::TooLarge => (axum::http::StatusCode::PAYLOAD_TOO_LARGE, self.to_string()),
+            FileOpError::Cancelled => (axum::http::StatusCode::CONFLICT, self.to_string()),
             FileOpError::Io(_) => (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "internal error".to_string(),

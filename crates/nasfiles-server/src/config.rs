@@ -16,6 +16,8 @@ pub struct AppConfig {
     pub dev_mode: bool,
     pub auth_mode: AuthMode,
     pub no_server_side_execution: bool,
+    pub csp_extra_img_src: Vec<String>,
+    pub csp_extra_media_src: Vec<String>,
 
     // Database
     pub db_url: String,
@@ -129,6 +131,8 @@ impl AppConfig {
             .map(|v| AuthMode::from_env_value(&v))
             .unwrap_or(Ok(AuthMode::Sso))?;
         let no_server_side_execution = env_bool("NO_SERVER_SIDE_EXECUTION");
+        let csp_extra_img_src = parse_source_list_env("CSP_IMG_SRC_EXTRA");
+        let csp_extra_media_src = parse_source_list_env("CSP_MEDIA_SRC_EXTRA");
 
         // BIND_ADDR
         let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_string());
@@ -384,6 +388,8 @@ impl AppConfig {
             dev_mode,
             auth_mode,
             no_server_side_execution,
+            csp_extra_img_src,
+            csp_extra_media_src,
             db_url,
             common_folders,
             home_folder_root,
@@ -428,6 +434,16 @@ fn parse_env_bool(value: Option<&str>) -> bool {
     value
         .map(|v| v == "1" || v.to_lowercase() == "true")
         .unwrap_or(false)
+}
+
+fn parse_source_list_env(key: &str) -> Vec<String> {
+    std::env::var(key)
+        .unwrap_or_default()
+        .split([',', ' ', '\n', '\t'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
 }
 
 /// Discover all SSO_GROUP_*_FOLDERS_{READ,WRITE,SHARE} and SSO_GROUP_*_COMMON_FOLDERS
@@ -630,6 +646,8 @@ mod tests {
             dev_mode: false,
             auth_mode: AuthMode::Sso,
             no_server_side_execution: false,
+            csp_extra_img_src: Vec::new(),
+            csp_extra_media_src: Vec::new(),
             db_url: "".into(),
             common_folders,
             home_folder_root: None,

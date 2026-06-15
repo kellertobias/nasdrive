@@ -9,6 +9,7 @@ use serde::Deserialize;
 use crate::auth::middleware::CurrentUser;
 use crate::fs::roots;
 use crate::state::AppState;
+use crate::thumb::cache::ThumbFormat;
 
 #[derive(Deserialize)]
 pub struct ThumbnailQuery {
@@ -16,6 +17,7 @@ pub struct ThumbnailQuery {
     /// Target width in pixels (default: 480)
     #[serde(default = "default_width")]
     pub w: u32,
+    pub format: Option<String>,
 }
 
 fn default_width() -> u32 {
@@ -63,7 +65,12 @@ pub async fn get_thumbnail(
     let root_kind = if root_key == "~" { "home" } else { "common" };
 
     // Clamp width
-    let width = query.w.clamp(48, 1280);
+    let width = query.w.clamp(48, 2560);
+    let requested_format = match query.format.as_deref() {
+        Some("png") => Some(ThumbFormat::Png),
+        Some("jpeg") | Some("jpg") => Some(ThumbFormat::Jpeg),
+        _ => None,
+    };
 
     let thumb_cache = state.thumb_cache.as_ref().ok_or_else(|| {
         (
@@ -80,6 +87,7 @@ pub async fn get_thumbnail(
             &root_key,
             &query.path,
             width,
+            requested_format,
             &state.config,
         )
         .await

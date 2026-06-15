@@ -1,12 +1,13 @@
 import api from '../api/client';
-import type { UserInfo } from '../api/client';
+import type { TransferJob, UserInfo } from '../api/client';
 import { useViewStore } from '../state/view';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Icon } from './Icon';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { formatFileSize } from '../lib/icons';
 import { AppLogo } from './AppLogo';
+import { transferProgressPercent } from '../lib/transferJobs';
 
 interface TopBarProps {
   user: UserInfo | null;
@@ -52,7 +53,9 @@ export function TopBar({ user }: TopBarProps) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [transferMenuOpen, setTransferMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const transferMenuRef = useRef<HTMLDivElement>(null);
   const seenFinishedJobs = useRef<Set<string>>(new Set());
   const buildDate = user?.build.date && user.build.date !== 'unknown'
     ? new Date(user.build.date).toLocaleString()
@@ -101,12 +104,21 @@ export function TopBar({ user }: TopBarProps) {
       ? `${completedEntries} / ${totalEntries} items`
       : 'Preparing';
   const remainingLabel = formatRemainingTime(estimateRemainingMs(activeTransferJobs));
+  const cancelTransferMutation = useMutation({
+    mutationFn: (jobId: string) => api.cancelTransferJob(jobId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfer-jobs'] });
+    },
+  });
 
   // Close menu on click outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+      }
+      if (transferMenuRef.current && !transferMenuRef.current.contains(e.target as Node)) {
+        setTransferMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -179,68 +191,117 @@ export function TopBar({ user }: TopBarProps) {
       <div style={{ flex: 1 }} />
 
       {activeTransferCount > 0 && (
-        <div
-          title="You can close this browser while the server finishes moving or copying. Progress will still be shown if you come back before it finishes."
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-2)',
-            minWidth: 220,
-            maxWidth: 300,
-            padding: 'var(--space-1) var(--space-2)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-bg-muted)',
-            color: 'var(--color-fg)',
-          }}
-        >
-          <Icon name="upload" size={15} color="var(--color-accent)" />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
+        <div ref={transferMenuRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setTransferMenuOpen((open) => !open)}
+            title="Transfer details"
+            aria-haspopup="menu"
+            aria-expanded={transferMenuOpen}
+            style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
               gap: 'var(--space-2)',
-              marginBottom: 3,
+              minWidth: 220,
+              maxWidth: 300,
+              padding: 'var(--space-1) var(--space-2)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-bg-muted)',
+              color: 'var(--color-fg)',
+              cursor: 'pointer',
+              textAlign: 'left',
             }}>
-              <span style={{
+            <Icon name="upload" size={15} color="var(--color-accent)" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 'var(--space-2)',
+                marginBottom: 3,
+              }}>
+                <span style={{
+                  fontSize: 'var(--text-xs)',
+                  fontWeight: 600,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {activeOperation} {activeTransferCount > 1 ? `${activeTransferCount} jobs` : `${activeTransferJobs[0]?.paths.length ?? 0} item(s)`}
+                </span>
+                <span className="tabular-nums" style={{ fontSize: 'var(--text-xs)', color: 'var(--color-fg-muted)' }}>
+                  {progressPct}%
+                </span>
+              </div>
+              <div style={{
+                height: 3,
+                borderRadius: 2,
+                background: 'var(--color-border)',
+                overflow: 'hidden',
+                marginBottom: 3,
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${progressPct}%`,
+                  borderRadius: 2,
+                  background: 'var(--color-accent)',
+                  transition: 'width 200ms ease-out',
+                }} />
+              </div>
+              <div style={{
                 fontSize: 'var(--text-xs)',
-                fontWeight: 600,
+                color: 'var(--color-fg-subtle)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}>
-                {activeOperation} {activeTransferCount > 1 ? `${activeTransferCount} jobs` : `${activeTransferJobs[0]?.paths.length ?? 0} item(s)`}
-              </span>
-              <span className="tabular-nums" style={{ fontSize: 'var(--text-xs)', color: 'var(--color-fg-muted)' }}>
-                {progressPct}%
-              </span>
+                {progressLabel} · {remainingLabel}
+              </div>
             </div>
-            <div style={{
-              height: 3,
-              borderRadius: 2,
-              background: 'var(--color-border)',
-              overflow: 'hidden',
-              marginBottom: 3,
-            }}>
+            <Icon name="chevronDown" size={14} color="var(--color-fg-subtle)" />
+          </button>
+
+          {transferMenuOpen && (
+            <div
+              role="menu"
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: 'var(--space-1)',
+                width: 420,
+                maxWidth: 'calc(100vw - 24px)',
+                maxHeight: 'min(420px, calc(100vh - 80px))',
+                overflowY: 'auto',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)',
+                boxShadow: 'var(--shadow-lg)',
+                padding: 'var(--space-2)',
+                zIndex: 60,
+              }}
+              className="fade-in"
+            >
               <div style={{
-                height: '100%',
-                width: `${progressPct}%`,
-                borderRadius: 2,
-                background: 'var(--color-accent)',
-                transition: 'width 200ms ease-out',
-              }} />
+                padding: 'var(--space-2)',
+                borderBottom: '1px solid var(--color-border-muted)',
+                marginBottom: 'var(--space-1)',
+                fontSize: 'var(--text-sm)',
+                fontWeight: 600,
+              }}>
+                Transfers
+              </div>
+              {activeTransferJobs.map((job) => (
+                <TransferJobMenuItem
+                  key={job.id}
+                  job={job}
+                  cancelling={cancelTransferMutation.variables === job.id && cancelTransferMutation.isPending}
+                  onCancel={() => cancelTransferMutation.mutate(job.id)}
+                />
+              ))}
             </div>
-            <div style={{
-              fontSize: 'var(--text-xs)',
-              color: 'var(--color-fg-subtle)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
-              {progressLabel} · {remainingLabel}
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -418,5 +479,107 @@ export function TopBar({ user }: TopBarProps) {
         </div>
       )}
     </header>
+  );
+}
+
+function TransferJobMenuItem({
+  job,
+  cancelling,
+  onCancel,
+}: {
+  job: TransferJob;
+  cancelling: boolean;
+  onCancel: () => void;
+}) {
+  const percent = transferProgressPercent([job]);
+  const title = `${job.operation === 'copy' ? 'Copy' : 'Move'} ${job.paths.length} item${job.paths.length === 1 ? '' : 's'}`;
+  const detail = job.total_bytes > 0
+    ? `${formatFileSize(job.transferred_bytes)} / ${formatFileSize(job.total_bytes)}`
+    : job.total_entries > 0
+      ? `${job.completed_entries} / ${job.total_entries} items`
+      : 'Preparing';
+  const destination = job.dest_path || '/';
+
+  return (
+    <div
+      role="menuitem"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr auto',
+        gap: 'var(--space-2)',
+        padding: 'var(--space-2)',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-2)' }}>
+          <div style={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontSize: 'var(--text-sm)',
+            fontWeight: 600,
+            color: 'var(--color-fg)',
+          }}>
+            {title}
+          </div>
+          <span className="tabular-nums" style={{ fontSize: 'var(--text-xs)', color: 'var(--color-fg-muted)' }}>
+            {percent}%
+          </span>
+        </div>
+        <div style={{
+          height: 4,
+          borderRadius: 2,
+          background: 'var(--color-border)',
+          overflow: 'hidden',
+          margin: 'var(--space-1) 0',
+        }}>
+          <div style={{
+            width: `${percent}%`,
+            height: '100%',
+            borderRadius: 2,
+            background: 'var(--color-accent)',
+            transition: 'width 200ms ease-out',
+          }} />
+        </div>
+        <div style={{
+          display: 'grid',
+          gap: 2,
+          color: 'var(--color-fg-subtle)',
+          fontSize: 'var(--text-xs)',
+          minWidth: 0,
+        }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {detail}
+          </span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            to {job.dest_root}:{destination}
+          </span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={cancelling}
+        title="Cancel transfer"
+        aria-label="Cancel transfer"
+        style={{
+          width: 30,
+          height: 30,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-md)',
+          background: 'transparent',
+          color: 'var(--color-fg-muted)',
+          cursor: cancelling ? 'progress' : 'pointer',
+          opacity: cancelling ? 0.6 : 1,
+        }}
+      >
+        <Icon name="x" size={14} />
+      </button>
+    </div>
   );
 }

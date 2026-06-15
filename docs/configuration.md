@@ -22,6 +22,8 @@ nasfiles is configured with environment variables.
 | `DB_URL` | `sqlite://$DATA_DIR/app.db?mode=rwc` | SQLite or Postgres database URL. |
 | `LOG_LEVEL` | `info` | Rust tracing log level. |
 | `NASFILES_DEV` | unset | Enables development auth bypass. Do not use in production. |
+| `CSP_IMG_SRC_EXTRA` | unset | Extra CSP `img-src` sources, separated by commas or whitespace. |
+| `CSP_MEDIA_SRC_EXTRA` | unset | Extra CSP `media-src` sources, separated by commas or whitespace. |
 
 ## Reverse Proxy
 

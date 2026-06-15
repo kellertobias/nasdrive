@@ -10,7 +10,9 @@ mod state;
 mod thumb;
 
 use axum::{
-    Router, middleware,
+    Router,
+    http::{HeaderName, HeaderValue},
+    middleware,
     routing::{get, post},
 };
 use tower_http::{
@@ -74,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
 
     let bind_addr = config.bind_addr.clone();
     let is_dev_mode = config.dev_mode;
+    let content_security_policy = content_security_policy(&config)?;
 
     // Build app state
     let state = state::AppState::new(config, pool)?;
@@ -124,6 +127,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/me", get(api::me::me))
         .route("/roots", get(api::files::list_roots))
         .route("/transfer-jobs", get(api::files::list_transfer_jobs))
+        .route(
+            "/transfer-jobs/{job_id}/cancel",
+            post(api::files::cancel_transfer_job),
+        )
         .route("/files/{root}/list", get(api::files::list_directory))
         .route("/files/{root}/tree", get(api::files::list_tree))
         .route("/files/{root}/download", get(api::files::download_file))
@@ -287,36 +294,32 @@ async fn main() -> anyhow::Result<()> {
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("x-content-type-options"),
-            axum::http::HeaderValue::from_static("nosniff"),
+            HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("x-frame-options"),
-            axum::http::HeaderValue::from_static("DENY"),
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("referrer-policy"),
-            axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"),
+            HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("permissions-policy"),
-            axum::http::HeaderValue::from_static(
-                "camera=(), microphone=(), geolocation=(), payment=()",
-            ),
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=()"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("content-security-policy"),
-            axum::http::HeaderValue::from_static(
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://auth.tokenet.de; media-src 'self' blob:; connect-src 'self'; font-src 'self' data: https://fonts.gstatic.com; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'",
-            ),
+            HeaderName::from_static("content-security-policy"),
+            content_security_policy,
         ))
         .with_state(state);
 
     // Add HSTS in production
     let app = if !is_dev_mode {
         app.layer(SetResponseHeaderLayer::overriding(
-            axum::http::header::HeaderName::from_static("strict-transport-security"),
-            axum::http::HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+            HeaderName::from_static("strict-transport-security"),
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
         ))
     } else {
         app
@@ -328,4 +331,23 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+fn content_security_policy(config: &config::AppConfig) -> anyhow::Result<HeaderValue> {
+    let img_src = csp_directive_sources("'self' data: blob:", &config.csp_extra_img_src);
+    let media_src = csp_directive_sources("'self' blob:", &config.csp_extra_media_src);
+    let policy = format!(
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src {img_src}; media-src {media_src}; connect-src 'self'; font-src 'self' data: https://fonts.gstatic.com; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'"
+    );
+
+    HeaderValue::from_str(&policy)
+        .map_err(|e| anyhow::anyhow!("invalid content security policy: {e}"))
+}
+
+fn csp_directive_sources(base_sources: &str, extra_sources: &[String]) -> String {
+    if extra_sources.is_empty() {
+        return base_sources.to_string();
+    }
+
+    format!("{} {}", base_sources, extra_sources.join(" "))
 }

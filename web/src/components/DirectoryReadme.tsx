@@ -9,9 +9,10 @@ interface DirectoryReadmeProps {
   root?: string;
   path?: string;
   shareConfig?: { token: string; bearer: string; subPath: string };
+  onClose?: () => void;
 }
 
-export function DirectoryReadme({ entries, root, path, shareConfig }: DirectoryReadmeProps) {
+export function DirectoryReadme({ entries, root, path, shareConfig, onClose }: DirectoryReadmeProps) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -81,14 +82,40 @@ export function DirectoryReadme({ entries, root, path, shareConfig }: DirectoryR
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--space-2)',
+        justifyContent: 'space-between',
         marginBottom: 'var(--space-3)',
         color: 'var(--color-fg-muted)',
         flexShrink: 0,
       }}>
-        <Icon name="bookOpen" size={16} />
-        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-          {readmeEntry.name}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', minWidth: 0 }}>
+          <Icon name="bookOpen" size={16} />
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {readmeEntry.name}
+          </span>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close README"
+            aria-label="Close README"
+            style={{
+              width: 26,
+              height: 26,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              background: 'transparent',
+              color: 'var(--color-fg-muted)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <Icon name="x" size={14} />
+          </button>
+        )}
       </div>
 
       <div 

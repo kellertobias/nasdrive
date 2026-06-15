@@ -1072,6 +1072,8 @@ mod tests {
                 dev_mode: false,
                 auth_mode: AuthMode::Sso,
                 no_server_side_execution: true,
+                csp_extra_img_src: Vec::new(),
+                csp_extra_media_src: Vec::new(),
                 db_url: String::new(),
                 common_folders: HashMap::new(),
                 home_folder_root: None,

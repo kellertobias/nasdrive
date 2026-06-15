@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct FolderCaps {
@@ -113,6 +113,8 @@ pub struct FileEntry {
     pub has_thumbnail: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_info: Option<MediaInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_info: Option<ImageInfo>,
 }
 
 /// Extracted metadata for audio/video files.
@@ -129,6 +131,17 @@ pub struct MediaInfo {
     pub audio_mime_codec: Option<String>,
     #[serde(default)]
     pub audio_languages: Vec<String>,
+}
+
+/// Extracted metadata for image files.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImageInfo {
+    pub width: u32,
+    pub height: u32,
+    pub format: Option<String>,
+    pub has_alpha: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub exif: BTreeMap<String, String>,
 }
 
 /// Share target kind.

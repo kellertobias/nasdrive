@@ -211,6 +211,14 @@ export interface MediaInfo {
   audio_languages: string[];
 }
 
+export interface ImageInfo {
+  width: number;
+  height: number;
+  format: string | null;
+  has_alpha: boolean;
+  exif?: Record<string, string>;
+}
+
 export interface FileEntry {
   name: string;
   size: number;
@@ -219,6 +227,7 @@ export interface FileEntry {
   mime_type: string | null;
   has_thumbnail: boolean;
   media_info?: MediaInfo | null;
+  image_info?: ImageInfo | null;
 }
 
 export interface DirectoryListing {
@@ -238,7 +247,7 @@ export interface TransferJob {
   dest_root: string;
   dest_path: string;
   paths: string[];
-  status: 'queued' | 'running' | 'done' | 'error';
+  status: 'queued' | 'running' | 'done' | 'error' | 'canceled';
   total_bytes: number;
   transferred_bytes: number;
   total_entries: number;
@@ -360,11 +369,19 @@ export const api = {
     return apiFetch<PreviewStatus>(`/api/files/${encodeURIComponent(root)}/preview-status?${params.toString()}`);
   },
 
-  thumbnailUrl: (root: string, path: string, width: number = 480, entry?: Pick<FileEntry, 'modified_at' | 'size'>, retry: number = 0) => {
+  thumbnailUrl: (
+    root: string,
+    path: string,
+    width: number = 480,
+    entry?: Pick<FileEntry, 'modified_at' | 'size'>,
+    retry: number = 0,
+    format?: 'jpeg' | 'png',
+  ) => {
     const params = new URLSearchParams({
       path,
       w: String(width),
     });
+    if (format) params.set('format', format);
     if (entry) params.set('v', `${entry.modified_at}-${entry.size}`);
     if (retry > 0) params.set('retry', String(retry));
     return `/api/files/${encodeURIComponent(root)}/thumbnail?${params.toString()}`;
@@ -474,6 +491,11 @@ export const api = {
 
   transferJobs: () =>
     apiFetch<{ jobs: TransferJob[] }>('/api/transfer-jobs'),
+
+  cancelTransferJob: (jobId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/transfer-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+    }),
 
   deleteEntries: (root: string, paths: string[]) =>
     apiFetch<{ ok: boolean }>(`/api/files/${encodeURIComponent(root)}/delete`, {

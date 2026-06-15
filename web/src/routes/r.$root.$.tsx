@@ -20,11 +20,12 @@ import type { ContextMenuItem } from '../components/ContextMenu';
 import { ShareDialog } from '../components/ShareDialog';
 import { PreviewPane } from '../components/PreviewPane';
 import { DirectoryReadme } from '../components/DirectoryReadme';
+import { FileDetailsPane, type FileDetailsSelection } from '../components/FileDetailsPane';
 import { ErrorDialog, ErrorToasts } from '../components/ErrorNotice';
 import type { ErrorNoticeData } from '../components/ErrorNotice';
 import { useViewStore } from '../state/view';
 import { getFileDragPayload, hasNasfilesDrag, isDemoDropTarget, isSelfOrDescendantDrop } from '../lib/fileDrag';
-import { isActiveTransferJob, transferJobsForTarget, transferProgressPercent } from '../lib/transferJobs';
+import { isActiveTransferJob, transferJobsForTarget } from '../lib/transferJobs';
 import { formatFileSize } from '../lib/icons';
 import type { DirectoryListing, TransferJob } from '../api/client';
 
@@ -122,6 +123,7 @@ function FileBrowser() {
   const [dropTargetActive, setDropTargetActive] = useState(false);
   const [columnDisplayPath, setColumnDisplayPath] = useState(path);
   const [columnActiveFolderPath, setColumnActiveFolderPath] = useState(path);
+  const [readmeHidden, setReadmeHidden] = useState(false);
   const [pendingTransfer, setPendingTransfer] = useState<{
     sourceRoot: string;
     paths: string[];
@@ -204,6 +206,7 @@ function FileBrowser() {
 
   useEffect(() => {
     setColumnDisplayPath(path);
+    setReadmeHidden(false);
   }, [path, root, viewMode]);
 
   const refreshListing = useCallback(() => {
@@ -571,6 +574,20 @@ function FileBrowser() {
 
   const selectedItems = Array.from(selectedPaths);
   const selectedCount = selectedItems.length;
+  const previewEntries = useMemo(() => {
+    if (!previewTarget) return [];
+    if (previewTarget.parentPath === path) return listing?.entries ?? [];
+    return queryClient.getQueryData<DirectoryListing>(['listing', root, previewTarget.parentPath])?.entries ?? [];
+  }, [listing?.entries, path, previewTarget, queryClient, root]);
+  const selectedDetails: FileDetailsSelection | null = useMemo(() => {
+    if (viewMode === 'columns' || selectedPaths.size !== 1 || !listing) return null;
+    const selectedPath = Array.from(selectedPaths)[0];
+    const entry = listing.entries.find((candidate) => {
+      const candidatePath = path ? `${path}/${candidate.name}` : candidate.name;
+      return candidatePath === selectedPath;
+    });
+    return entry ? { entry, parentPath: path, path: selectedPath } : null;
+  }, [listing, path, selectedPaths, viewMode]);
   const deletePreviewItems = selectedItems.slice(0, 5).map((selectedPath) => {
     const name = selectedPath.split('/').filter(Boolean).pop();
     return { path: selectedPath, name: name || selectedPath };
@@ -980,8 +997,18 @@ function FileBrowser() {
                 )}
               </div>
 
-              {viewMode !== 'columns' && listing && listing.entries.length > 0 && (
-                <DirectoryReadme entries={listing.entries} root={root} path={path} />
+              {viewMode !== 'columns' && selectedDetails && (
+                <FileDetailsPane
+                  root={root}
+                  selected={selectedDetails}
+                  width={400}
+                  onPreview={togglePreviewAtPath}
+                  onClose={() => useViewStore.getState().clearSelection()}
+                />
+              )}
+
+              {viewMode !== 'columns' && !selectedDetails && !readmeHidden && listing && listing.entries.length > 0 && (
+                <DirectoryReadme entries={listing.entries} root={root} path={path} onClose={() => setReadmeHidden(true)} />
               )}
             </div>
           </main>
@@ -1232,7 +1259,6 @@ function FileBrowser() {
       />
 
       <OperationProgressToasts
-        transferJobs={activeTransferJobs}
         deleteJobs={deleteJobs}
       />
 
@@ -1256,10 +1282,14 @@ function FileBrowser() {
           entry={previewTarget.entry}
           root={root}
           path={previewTarget.parentPath}
-          entries={previewTarget.parentPath === path ? listing?.entries ?? [] : []}
+          entries={previewEntries}
           mediaPreviewTranscodingEnabled={serverCapabilities.media_preview_transcoding}
           onClose={() => setPreviewTarget(null)}
-          onNavigate={(entry) => setPreviewTarget({ entry, parentPath: previewTarget.parentPath })}
+          onNavigate={(entry) => {
+            const nextPath = previewTarget.parentPath ? `${previewTarget.parentPath}/${entry.name}` : entry.name;
+            useViewStore.getState().select(nextPath);
+            setPreviewTarget({ entry, parentPath: previewTarget.parentPath });
+          }}
         />
       )}
     </div>
@@ -1306,13 +1336,11 @@ function removeDeletedPathsFromListings(
 }
 
 function OperationProgressToasts({
-  transferJobs,
   deleteJobs,
 }: {
-  transferJobs: TransferJob[];
   deleteJobs: DeleteJobNotice[];
 }) {
-  if (transferJobs.length === 0 && deleteJobs.length === 0) return null;
+  if (deleteJobs.length === 0) return null;
 
   return (
     <div
@@ -1330,15 +1358,6 @@ function OperationProgressToasts({
         pointerEvents: 'none',
       }}
     >
-      {transferJobs.map((job) => (
-        <OperationProgressToast
-          key={job.id}
-          iconName="upload"
-          title={`${job.operation === 'copy' ? 'Copying' : 'Moving'} ${formatCount(job.paths.length, 'file')}`}
-          detail={formatTransferDetail(job)}
-          percent={transferProgressPercent([job])}
-        />
-      ))}
       {deleteJobs.map((job) => (
         <OperationProgressToast
           key={`delete-${job.id}`}
@@ -1356,17 +1375,13 @@ function OperationProgressToast({
   iconName,
   title,
   detail,
-  percent,
   indeterminate = false,
 }: {
   iconName: React.ComponentProps<typeof Icon>['name'];
   title: string;
   detail: string;
-  percent?: number;
   indeterminate?: boolean;
 }) {
-  const visiblePercent = Math.max(0, Math.min(100, percent ?? 0));
-
   return (
     <div
       className="fade-in"
@@ -1400,11 +1415,6 @@ function OperationProgressToast({
           }}>
             {title}
           </span>
-          {!indeterminate && (
-            <span className="tabular-nums" style={{ color: 'var(--color-fg-muted)', fontSize: 'var(--text-xs)' }}>
-              {visiblePercent}%
-            </span>
-          )}
         </div>
         <div style={{
           height: 4,
@@ -1417,10 +1427,9 @@ function OperationProgressToast({
             className={indeterminate ? 'operation-progress-indeterminate' : undefined}
             style={{
               height: '100%',
-              width: indeterminate ? '42%' : `${visiblePercent}%`,
+              width: indeterminate ? '42%' : '100%',
               borderRadius: 2,
               background: 'var(--color-accent)',
-              transition: indeterminate ? undefined : 'width 200ms ease-out',
             }}
           />
         </div>
@@ -1436,16 +1445,6 @@ function OperationProgressToast({
       </div>
     </div>
   );
-}
-
-function formatTransferDetail(job: TransferJob) {
-  if (job.total_bytes > 0) {
-    return `${formatFileSize(job.transferred_bytes)} / ${formatFileSize(job.total_bytes)}`;
-  }
-  if (job.total_entries > 0) {
-    return `${job.completed_entries} / ${job.total_entries} items`;
-  }
-  return 'Preparing';
 }
 
 function formatCount(count: number, noun: string) {

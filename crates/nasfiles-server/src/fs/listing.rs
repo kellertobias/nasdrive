@@ -72,6 +72,7 @@ pub fn list_directory(
             mime_type,
             has_thumbnail,
             media_info: None,
+            image_info: None,
         });
     }
 

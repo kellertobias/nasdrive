@@ -7,7 +7,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
-use crate::fs::{archive, listing, media_info, ops, roots, stream, zip};
+use crate::fs::{archive, image_info, listing, media_info, ops, roots, stream, zip};
 use crate::state::{AppState, TransferJob, TransferJobStatus, now_ms};
 use crate::thumb::kind;
 
@@ -278,6 +278,32 @@ pub async fn file_info(
         None
     };
 
+    let image_info = if !state.config.no_server_side_execution
+        && !is_dir
+        && mime_type.as_ref().is_some_and(|m| m.starts_with("image/"))
+    {
+        match image_info::get_or_probe(
+            &state.config.thumbnail_cache_dir,
+            &resolved,
+            root_kind,
+            &root_key,
+            &query.path,
+            state.config.thumbnail_max_image_width,
+            state.config.thumbnail_max_image_height,
+            state.config.thumbnail_max_image_alloc,
+        )
+        .await
+        {
+            Ok(info) => info,
+            Err(e) => {
+                tracing::warn!("failed to read image info for {}: {e}", resolved.display());
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     Ok(Json(serde_json::json!({
         "name": name,
         "size": size,
@@ -286,6 +312,7 @@ pub async fn file_info(
         "mime_type": mime_type,
         "has_thumbnail": has_thumbnail,
         "media_info": media_info,
+        "image_info": image_info,
         "path": query.path,
     })))
 }
@@ -353,6 +380,7 @@ pub async fn transfer_entries(
         created_at: now,
         updated_at: now,
         finished_at: None,
+        cancel_requested: false,
     };
     state.transfer_jobs.insert(job);
 
@@ -385,6 +413,7 @@ pub async fn transfer_entries(
                     job.completed_entries = progress.completed_entries;
                 });
             },
+            || task_state.transfer_jobs.is_cancel_requested(&task_job_id),
         )
         .await;
 
@@ -396,6 +425,10 @@ pub async fn transfer_entries(
                     job.transferred_bytes = job.total_bytes;
                     job.completed_entries = job.total_entries;
                 }
+                Err(ops::FileOpError::Cancelled) => {
+                    job.status = TransferJobStatus::Canceled;
+                    job.error = None;
+                }
                 Err(err) => {
                     job.status = TransferJobStatus::Error;
                     job.error = Some(err.to_string());
@@ -405,6 +438,16 @@ pub async fn transfer_entries(
     });
 
     Ok(Json(serde_json::json!({"ok": true, "job_id": job_id})))
+}
+
+/// POST /api/transfer-jobs/:job_id/cancel — cancel a queued/running transfer job.
+pub async fn cancel_transfer_job(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(job_id): Path<String>,
+) -> Result<impl IntoResponse, ops::FileOpError> {
+    let ok = state.transfer_jobs.cancel_for_user(&job_id, &user.user_id);
+    Ok(Json(serde_json::json!({ "ok": ok })))
 }
 
 /// GET /api/transfer-jobs — list copy/move jobs for the current user.

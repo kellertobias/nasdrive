@@ -5,10 +5,10 @@ import api from '../api/client';
 import type { DirectoryListing, FileEntry, Root, TransferJob } from '../api/client';
 import { FileIcon, Icon } from './Icon';
 import { MiddleEllipsis } from './MiddleEllipsis';
-import { ThumbnailImage } from './ThumbnailImage';
 import { UsageRing } from './UsageRing';
+import { FileDetailsPane } from './FileDetailsPane';
 import { entryPath, hasNasfilesDrag, setFileDragPayload } from '../lib/fileDrag';
-import { formatModifiedDate, formatFileSize, getFileIcon, hasThumbnail } from '../lib/icons';
+import { getFileIcon } from '../lib/icons';
 import { useViewStore } from '../state/view';
 import { TransferProgressIndicator } from './TransferProgressIndicator';
 import {
@@ -119,7 +119,6 @@ export function ColumnBrowser({
     folderColumnWidth,
     infoColumnWidth,
     setShareColumnWidth,
-    setFolderColumnWidth,
     setInfoColumnWidth,
   } = useViewStore();
   const activeShareName = roots.find((root) => root.key === activeRoot)?.display_name ?? activeRoot;
@@ -157,9 +156,8 @@ export function ColumnBrowser({
   ), [folderColumnWidth, folderColumnWidths]);
 
   const setWidthForColumn = useCallback((columnPath: string, width: number) => {
-    setFolderColumnWidth(width);
     setFolderColumnWidths((current) => ({ ...current, [columnPath]: width }));
-  }, [setFolderColumnWidth]);
+  }, []);
 
   const selectedPath = selectedPaths.size === 1 ? Array.from(selectedPaths)[0] : '';
   let activeFolderPath = revealedPath || activePath;
@@ -494,8 +492,9 @@ export function ColumnBrowser({
         onPointerDown={(e) => startResize(e, infoColumnWidth, INFO_WIDTH, setInfoColumnWidth, -1)}
       />
 
-      <MediaInfoPane
+      <FileDetailsPane
         width={infoColumnWidth}
+        sticky
         root={activeRoot}
         selected={selectedInfo}
         onPreview={(entry, parentPath) => onPreviewEntry(entry, parentPath)}
@@ -730,8 +729,8 @@ function ColumnTransferPlaceholderRow({ name, percent, style }: { name: string; 
       }}
     >
       <FileIcon svg={icon.svg} color="var(--color-fg-subtle)" size={18} />
-      <span style={{ minWidth: 0, fontWeight: 400 }}>
-        <MiddleEllipsis text={name} maxWidth={180} />
+      <span style={{ minWidth: 0, fontWeight: 400, overflow: 'hidden' }}>
+        <MiddleEllipsis text={name} maxWidth={Number.MAX_SAFE_INTEGER} />
       </span>
       <span
         title={`${percent}%`}
@@ -886,8 +885,8 @@ function ColumnEntryRow({
       }}
     >
       <FileIcon svg={icon.svg} color={isBeingMoved ? 'var(--color-fg-subtle)' : icon.color} size={18} />
-      <span style={{ minWidth: 0, fontWeight: entry.is_dir ? 500 : 400 }}>
-        <MiddleEllipsis text={entry.name} maxWidth={180} />
+      <span style={{ minWidth: 0, fontWeight: entry.is_dir ? 500 : 400, overflow: 'hidden' }}>
+        <MiddleEllipsis text={entry.name} maxWidth={Number.MAX_SAFE_INTEGER} />
       </span>
       {isBeingMoved ? (
         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-fg-subtle)' }}>Moving...</span>
@@ -899,236 +898,6 @@ function ColumnEntryRow({
       </span>
     </button>
   );
-}
-
-function MediaInfoPane({
-  width,
-  root,
-  selected,
-  onPreview,
-}: {
-  width: number;
-  root: string;
-  selected: { entry: FileEntry; parentPath: string; path: string } | null;
-  onPreview: (entry: FileEntry, parentPath: string) => void;
-}) {
-  const entry = selected?.entry;
-  const [fileInfo, setFileInfo] = useState<FileEntry | null>(null);
-  const icon = entry ? getFileIcon(entry) : null;
-  const showThumb = Boolean(entry && !entry.is_dir && hasThumbnail(entry));
-  const mediaInfo = fileInfo?.media_info ?? entry?.media_info ?? null;
-  const mediaDetails = mediaInfo ? getMediaInfoDetails(mediaInfo) : [];
-  const selectedPath = selected?.path ?? '';
-  const entryName = entry?.name ?? '';
-  const entryIsDirectory = Boolean(entry?.is_dir);
-
-  useEffect(() => {
-    setFileInfo(null);
-    if (!selectedPath || !entryName || entryIsDirectory) return;
-
-    let cancelled = false;
-    api.fileInfo(root, selectedPath)
-      .then((info) => {
-        if (!cancelled) setFileInfo(info);
-      })
-      .catch(() => {
-        if (!cancelled) setFileInfo(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [entryIsDirectory, entryName, root, selectedPath]);
-
-  return (
-    <aside
-      aria-label="Media info"
-      style={{
-        position: 'sticky',
-        right: 0,
-        zIndex: 2,
-        width,
-        minWidth: width,
-        maxWidth: width,
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        borderLeft: '1px solid var(--color-border)',
-        background: 'var(--color-bg)',
-        overflowY: 'auto',
-      }}
-    >
-      <div style={columnTitleStyle}>Info</div>
-      {!entry && (
-        <div style={{ ...emptyColumnStyle, padding: 'var(--space-6)' }}>
-          Select an item
-        </div>
-      )}
-      {entry && selected && (
-        <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <div style={{
-            aspectRatio: '4 / 3',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-bg-muted)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-          }}>
-            {showThumb ? (
-              <ThumbnailImage
-                root={root}
-                path={selected.parentPath}
-                entry={entry}
-                width={480}
-                fallbackSize={56}
-              />
-            ) : (
-              icon && <FileIcon svg={icon.svg} color={icon.color} size={56} />
-            )}
-          </div>
-
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              fontSize: 'var(--text-base)',
-              fontWeight: 600,
-              color: 'var(--color-fg)',
-              overflowWrap: 'anywhere',
-              lineHeight: 'var(--leading-sm)',
-            }}>
-              {entry.name}
-            </div>
-            <div style={{
-              marginTop: 'var(--space-1)',
-              fontSize: 'var(--text-xs)',
-              color: 'var(--color-fg-muted)',
-              overflowWrap: 'anywhere',
-            }}>
-              {selected.path}
-            </div>
-          </div>
-
-          <dl style={{
-            display: 'grid',
-            gridTemplateColumns: 'auto minmax(0, 1fr)',
-            gap: 'var(--space-2) var(--space-3)',
-            fontSize: 'var(--text-sm)',
-          }}>
-            <InfoTerm label="Kind" value={entry.is_dir ? 'Folder' : entry.mime_type || 'File'} />
-            <InfoTerm label="Size" value={entry.is_dir ? '—' : formatFileSize(entry.size)} />
-            <InfoTerm label="Modified" value={formatModifiedDate(entry.modified_at)} />
-          </dl>
-
-          {mediaDetails.length > 0 && (
-            <section style={{
-              borderTop: '1px solid var(--color-border)',
-              paddingTop: 'var(--space-4)',
-            }}>
-              <div style={{
-                marginBottom: 'var(--space-3)',
-                color: 'var(--color-fg-subtle)',
-                fontSize: 'var(--text-xs)',
-                fontWeight: 600,
-                letterSpacing: 'var(--tracking-wide)',
-                textTransform: 'uppercase',
-              }}>
-                Media
-              </div>
-              <dl style={{
-                display: 'grid',
-                gridTemplateColumns: 'auto minmax(0, 1fr)',
-                gap: 'var(--space-2) var(--space-3)',
-                fontSize: 'var(--text-sm)',
-              }}>
-                {mediaDetails.map((detail) => (
-                  <InfoTerm key={detail.label} label={detail.label} value={detail.value} />
-                ))}
-              </dl>
-            </section>
-          )}
-
-          {!entry.is_dir && (
-            <button
-              type="button"
-              onClick={() => onPreview(entry, selected.parentPath)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 'var(--space-2)',
-                padding: 'var(--space-2) var(--space-3)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-md)',
-                background: 'transparent',
-                color: 'var(--color-fg)',
-                cursor: 'pointer',
-                fontSize: 'var(--text-sm)',
-                fontWeight: 500,
-              }}
-            >
-              <Icon name="folderSearch" size={16} />
-              Preview
-            </button>
-          )}
-        </div>
-      )}
-    </aside>
-  );
-}
-
-function InfoTerm({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <dt style={{ color: 'var(--color-fg-subtle)' }}>{label}</dt>
-      <dd style={{ color: 'var(--color-fg)', minWidth: 0, overflowWrap: 'anywhere' }}>{value}</dd>
-    </>
-  );
-}
-
-function getMediaInfoDetails(info: NonNullable<FileEntry['media_info']>) {
-  const details: Array<{ label: string; value: string }> = [];
-
-  if (info.duration_ms !== null && info.duration_ms !== undefined) {
-    details.push({ label: 'Length', value: formatDuration(info.duration_ms) });
-  }
-
-  if (info.width && info.height) {
-    details.push({ label: 'Resolution', value: `${info.width} x ${info.height}` });
-  }
-
-  const streams: string[] = [];
-  if (info.video_codec) streams.push(`Video: ${info.video_codec}`);
-  if (info.audio_codec) streams.push(`Audio: ${info.audio_codec}`);
-  if (streams.length > 0) {
-    details.push({ label: 'Streams', value: streams.join(' / ') });
-  }
-
-  const encodings = [info.video_codec, info.audio_codec].filter(Boolean);
-  if (encodings.length > 0) {
-    details.push({ label: 'Encoding', value: encodings.join(' / ') });
-  }
-
-  const audioLanguages = info.audio_languages ?? [];
-  if (audioLanguages.length > 0) {
-    details.push({ label: 'Audio', value: audioLanguages.join(', ') });
-  }
-
-  return details;
-}
-
-function formatDuration(durationMs: number) {
-  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
-  const seconds = totalSeconds % 60;
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  const minutes = totalMinutes % 60;
-  const hours = Math.floor(totalMinutes / 60);
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
-
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function ResizeHandle({
