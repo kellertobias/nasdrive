@@ -11,12 +11,13 @@ mod thumb;
 
 use axum::{
     Router,
-    http::{HeaderName, HeaderValue},
+    http::{HeaderName, HeaderValue, Method, header},
     middleware,
     routing::{get, post},
 };
 use tower_http::{
-    compression::CompressionLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer,
+    compression::CompressionLayer, cors::CorsLayer, set_header::SetResponseHeaderLayer,
+    trace::TraceLayer,
 };
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -77,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
     let bind_addr = config.bind_addr.clone();
     let is_dev_mode = config.dev_mode;
     let content_security_policy = content_security_policy(&config)?;
+    let cors_layer = cors_layer(&config)?;
 
     // Build app state
     let state = state::AppState::new(config, pool)?;
@@ -307,6 +309,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(health)
         .fallback(assets::static_handler)
         .layer(session_layer)
+        .layer(cors_layer)
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(SetResponseHeaderLayer::overriding(
@@ -347,6 +350,32 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+fn cors_layer(config: &config::AppConfig) -> anyhow::Result<CorsLayer> {
+    let Some(origin) = origin_from_url(&config.base_url) else {
+        return Ok(CorsLayer::new());
+    };
+
+    Ok(CorsLayer::new()
+        .allow_origin(HeaderValue::from_str(&origin)?)
+        .allow_credentials(true)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            HeaderName::from_static("x-nasfiles-request"),
+        ]))
+}
+
+fn origin_from_url(url: &str) -> Option<String> {
+    let scheme_end = url.find("://")?;
+    let after_scheme = scheme_end + 3;
+    let rest = &url[after_scheme..];
+    let host_end = rest.find('/').unwrap_or(rest.len());
+    if host_end == 0 {
+        return None;
+    }
+    Some(format!("{}://{}", &url[..scheme_end], &rest[..host_end]))
 }
 
 fn content_security_policy(config: &config::AppConfig) -> anyhow::Result<HeaderValue> {
