@@ -12,7 +12,7 @@ import { TopBar } from '../components/TopBar';
 import { Breadcrumb } from '../components/Breadcrumb';
 import { EmptyState } from '../components/EmptyState';
 import { Icon } from '../components/Icon';
-import { UploadZone } from '../components/UploadZone';
+import { UploadZone, type UploadZoneHandle } from '../components/UploadZone';
 import { CreateFolderDialog } from '../components/CreateFolderDialog';
 import { RenameDialog } from '../components/RenameDialog';
 import { ContextMenu } from '../components/ContextMenu';
@@ -108,7 +108,7 @@ function FileBrowser() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { viewMode, sidebarOpen, sidebarWidth, selectedPaths, setSidebarWidth, setViewMode } = useViewStore();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadZoneRef = useRef<UploadZoneHandle>(null);
   const listingScrollRef = useRef<HTMLDivElement>(null);
   const errorIdRef = useRef(0);
   const deleteJobIdRef = useRef(0);
@@ -212,6 +212,12 @@ function FileBrowser() {
     setColumnDisplayPath(path);
     setReadmeHidden(false);
   }, [path, root, viewMode]);
+
+  // Clear selection when navigating to a different directory so stale paths
+  // can't accidentally be targeted by Delete/F2 keyboard shortcuts.
+  useEffect(() => {
+    useViewStore.getState().clearSelection();
+  }, [path, root]);
 
   const refreshListing = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['listing', root, path] });
@@ -662,7 +668,7 @@ function FileBrowser() {
         )}
 
         {/* Main content */}
-        <UploadZone root={root} path={path} onUploadComplete={refreshListing} canUpload={caps.write}>
+        <UploadZone ref={uploadZoneRef} root={root} path={path} onUploadComplete={refreshListing} canUpload={caps.write}>
           <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* Toolbar */}
             <div style={{
@@ -686,7 +692,7 @@ function FileBrowser() {
               {caps.write && (
                 <>
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => uploadZoneRef.current?.trigger()}
                     title="Upload files"
                     style={{
                       display: 'flex',
@@ -1045,26 +1051,6 @@ function FileBrowser() {
           </main>
         </UploadZone>
       </div>
-
-      {/* Hidden file input for upload button */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        style={{ display: 'none' }}
-        onChange={async (e) => {
-          const files = Array.from(e.target.files || []);
-          if (files.length > 0) {
-            try {
-              await api.upload(root, path, files);
-              refreshListing();
-            } catch (err) {
-              showErrorDialog('Upload failed', err);
-            }
-          }
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }}
-      />
 
       {/* Dialogs */}
       <CreateFolderDialog
