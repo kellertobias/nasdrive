@@ -15,6 +15,10 @@ use nasfiles_core::models::AuthUser;
 
 use super::ops::{FileOpError, TransferOperation};
 
+const FILE_JOB_COLUMNS: &str = "id, owner_user_id, owner_user_json, operation, source_root, dest_root, \
+    dest_path, paths_json, status, total_bytes, transferred_bytes, total_entries, completed_entries, \
+    error, created_at, updated_at, finished_at, CASE WHEN cancel_requested THEN 1 ELSE 0 END AS cancel_requested_int";
+
 #[derive(Clone)]
 pub struct FileJobStore {
     pool: AnyPool,
@@ -103,22 +107,31 @@ impl FileJobStore {
     }
 
     pub async fn list_for_user(&self, user_id: &str) -> Result<Vec<FileJob>, FileOpError> {
-        let rows = sqlx::query(
-            "SELECT * FROM file_operation_jobs WHERE owner_user_id = $1 ORDER BY created_at DESC",
-        )
+        let rows = sqlx::query(&format!(
+            "SELECT {FILE_JOB_COLUMNS} FROM file_operation_jobs WHERE owner_user_id = $1 ORDER BY created_at DESC"
+        ))
         .bind(user_id)
         .fetch_all(&self.pool)
         .await
         .map_err(db_error)?;
 
-        rows.into_iter().map(FileJob::from_row).collect()
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| match FileJob::from_row(row) {
+                Ok(job) => Some(job),
+                Err(err) => {
+                    tracing::warn!("skipping malformed file operation job row: {err}");
+                    None
+                }
+            })
+            .collect())
     }
 
     pub async fn cancel_for_user(&self, id: &str, user_id: &str) -> Result<bool, FileOpError> {
         let now = now_ms();
         let result = sqlx::query(
             "UPDATE file_operation_jobs \
-             SET cancel_requested = TRUE, updated_at = $1 \
+             SET cancel_requested = 1, updated_at = $1 \
              WHERE id = $2 AND owner_user_id = $3 AND status IN ('queued', 'running', 'paused_needs_confirmation')",
         )
         .bind(now)
@@ -135,7 +148,7 @@ impl FileJobStore {
         let now = now_ms();
         let result = sqlx::query(
             "UPDATE file_operation_jobs \
-             SET status = 'queued', cancel_requested = FALSE, error = NULL, finished_at = NULL, updated_at = $1 \
+             SET status = 'queued', cancel_requested = 0, error = NULL, finished_at = NULL, updated_at = $1 \
              WHERE id = $2 AND owner_user_id = $3 AND status IN ('paused_needs_confirmation', 'error', 'canceled')",
         )
         .bind(now)
@@ -192,7 +205,7 @@ impl FileJobStore {
         }
 
         sqlx::query(
-            "UPDATE file_operation_jobs SET status = 'canceled', cancel_requested = TRUE, updated_at = $1, finished_at = $2 \
+            "UPDATE file_operation_jobs SET status = 'canceled', cancel_requested = 1, updated_at = $1, finished_at = $2 \
              WHERE id = $3 AND owner_user_id = $4",
         )
         .bind(now_ms())
@@ -239,22 +252,25 @@ impl FileJobStore {
     }
 
     async fn get(&self, id: &str) -> Result<Option<FileJob>, FileOpError> {
-        let row = sqlx::query("SELECT * FROM file_operation_jobs WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db_error)?;
+        let row = sqlx::query(&format!(
+            "SELECT {FILE_JOB_COLUMNS} FROM file_operation_jobs WHERE id = $1"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_error)?;
         row.map(FileJob::from_row).transpose()
     }
 
     async fn get_for_user(&self, id: &str, user_id: &str) -> Result<Option<FileJob>, FileOpError> {
-        let row =
-            sqlx::query("SELECT * FROM file_operation_jobs WHERE id = $1 AND owner_user_id = $2")
-                .bind(id)
-                .bind(user_id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(db_error)?;
+        let row = sqlx::query(&format!(
+            "SELECT {FILE_JOB_COLUMNS} FROM file_operation_jobs WHERE id = $1 AND owner_user_id = $2"
+        ))
+        .bind(id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_error)?;
         row.map(FileJob::from_row).transpose()
     }
 
@@ -282,13 +298,16 @@ impl FileJobStore {
     }
 
     async fn is_cancel_requested(&self, id: &str) -> Result<bool, FileOpError> {
-        let row = sqlx::query("SELECT cancel_requested FROM file_operation_jobs WHERE id = $1")
+        let row = sqlx::query(
+            "SELECT CASE WHEN cancel_requested THEN 1 ELSE 0 END AS cancel_requested_int FROM file_operation_jobs WHERE id = $1",
+        )
             .bind(id)
             .fetch_optional(&self.pool)
             .await
             .map_err(db_error)?;
         Ok(row
-            .and_then(|row| row.try_get::<bool, _>("cancel_requested").ok())
+            .and_then(|row| row.try_get::<i64, _>("cancel_requested_int").ok())
+            .map(|value| value != 0)
             .unwrap_or(false))
     }
 
@@ -460,7 +479,10 @@ impl FileJob {
             created_at: row.try_get("created_at").map_err(db_error)?,
             updated_at: row.try_get("updated_at").map_err(db_error)?,
             finished_at: row.try_get("finished_at").map_err(db_error)?,
-            cancel_requested: row.try_get("cancel_requested").map_err(db_error)?,
+            cancel_requested: row
+                .try_get::<i64, _>("cancel_requested_int")
+                .map(|value| value != 0)
+                .unwrap_or(false),
         })
     }
 }
