@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use dashmap::DashMap;
 use sqlx::AnyPool;
@@ -9,16 +10,28 @@ use crate::config::AppConfig;
 use nasfiles_core::tokens;
 
 /// State for share access rate limiting.
-#[derive(Clone, Default)]
+///
+/// The map is bounded via periodic eviction: entries whose maximum backoff has
+/// long elapsed are pruned every 100 `record_failure` calls, keeping memory use
+/// proportional to the number of *recent* failed tokens.
+#[derive(Clone)]
 pub struct ShareRateLimiter {
     /// Map from token_hash → (failed_attempts, last_attempt_timestamp_ms)
     attempts: Arc<DashMap<String, (u32, i64)>>,
+    call_count: Arc<AtomicU64>,
+}
+
+impl Default for ShareRateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ShareRateLimiter {
     pub fn new() -> Self {
         Self {
             attempts: Arc::new(DashMap::new()),
+            call_count: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -27,8 +40,8 @@ impl ShareRateLimiter {
         if let Some(entry) = self.attempts.get(token_hash) {
             let (count, last) = *entry;
             if count >= 5 {
-                // Exponential backoff: 2^(count-5) seconds, max 5 minutes
-                let backoff_ms = (1 << (count - 5).min(8)) * 1000;
+                // Exponential backoff: 2^(count-5) seconds, max ~4.3 minutes
+                let backoff_ms: i64 = (1i64 << (count - 5).min(8)) * 1000;
                 let now = chrono::Utc::now().timestamp_millis();
                 return now - last < backoff_ms;
             }
@@ -46,11 +59,26 @@ impl ShareRateLimiter {
                 e.1 = now;
             })
             .or_insert((1, now));
+
+        // Evict stale entries every 100 calls to bound map growth.
+        let n = self.call_count.fetch_add(1, Ordering::Relaxed);
+        if n % 100 == 0 {
+            self.evict_expired(now);
+        }
     }
 
     /// Reset on successful auth.
     pub fn reset(&self, token_hash: &str) {
         self.attempts.remove(token_hash);
+    }
+
+    /// Remove entries whose backoff period has expired (with a 5-minute grace window).
+    fn evict_expired(&self, now_ms: i64) {
+        let grace_ms: i64 = 5 * 60 * 1000;
+        self.attempts.retain(|_, (count, last)| {
+            let max_backoff_ms: i64 = (1i64 << (*count).saturating_sub(5).min(8)) * 1000;
+            *last + max_backoff_ms + grace_ms > now_ms
+        });
     }
 }
 

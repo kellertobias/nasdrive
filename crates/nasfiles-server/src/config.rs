@@ -74,6 +74,10 @@ pub struct AppConfig {
     #[allow(dead_code)]
     pub max_upload_request_size: u64,
 
+    // Trusted proxy depth for IP extraction from X-Forwarded-For.
+    // 0 = no proxy, ignore headers; 1 = one proxy (e.g. Traefik), default.
+    pub trusted_proxy_depth: u8,
+
     // Logging
     pub log_level: String,
 }
@@ -379,6 +383,12 @@ impl AppConfig {
             .and_then(|v| v.parse().ok())
             .unwrap_or(50 * 1024 * 1024 * 1024);
 
+        // Trusted proxy depth (default 1: assume a single reverse proxy like Traefik)
+        let trusted_proxy_depth: u8 = std::env::var("TRUSTED_PROXY_DEPTH")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+
         // Log level
         let log_level = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
 
@@ -423,6 +433,7 @@ impl AppConfig {
             sftp_host_key_path,
             max_upload_file_size,
             max_upload_request_size,
+            trusted_proxy_depth,
             log_level,
         })
     }
@@ -681,6 +692,7 @@ mod tests {
             sftp_host_key_path: PathBuf::new(),
             max_upload_file_size: 0,
             max_upload_request_size: 0,
+            trusted_proxy_depth: 1,
             log_level: "".into(),
         };
 

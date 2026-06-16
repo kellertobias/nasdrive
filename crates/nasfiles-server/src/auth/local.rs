@@ -300,7 +300,7 @@ pub async fn login(
     require_local_mode(&state)?;
     require_local_auth_header(&headers)?;
     let normalized = normalize_username(&body.username);
-    let ip = client_ip(&headers);
+    let ip = client_ip(&headers, state.config.trusted_proxy_depth);
 
     if is_login_rate_limited(&state.pool, &normalized).await
         || is_login_rate_limited_by_ip(&state.pool, ip.as_deref()).await
@@ -308,7 +308,7 @@ pub async fn login(
         record_attempt(
             &state.pool,
             &normalized,
-            &headers,
+            ip.as_deref(),
             false,
             Some("rate_limited"),
         )
@@ -326,7 +326,7 @@ pub async fn login(
         record_attempt(
             &state.pool,
             &normalized,
-            &headers,
+            ip.as_deref(),
             false,
             Some("unknown_user"),
         )
@@ -341,7 +341,7 @@ pub async fn login(
         record_attempt(
             &state.pool,
             &normalized,
-            &headers,
+            ip.as_deref(),
             false,
             Some("no_password"),
         )
@@ -355,7 +355,7 @@ pub async fn login(
         record_attempt(
             &state.pool,
             &normalized,
-            &headers,
+            ip.as_deref(),
             false,
             Some("bad_password"),
         )
@@ -370,7 +370,7 @@ pub async fn login(
         record_attempt(
             &state.pool,
             &normalized,
-            &headers,
+            ip.as_deref(),
             false,
             Some("passkey_required"),
         )
@@ -390,7 +390,7 @@ pub async fn login(
             record_attempt(
                 &state.pool,
                 &normalized,
-                &headers,
+                ip.as_deref(),
                 true,
                 Some("trusted_totp"),
             )
@@ -418,7 +418,7 @@ pub async fn login(
 
     let user = row.into_auth_user();
     finish_login(&state, &session, user).await?;
-    record_attempt(&state.pool, &normalized, &headers, true, Some("password")).await;
+    record_attempt(&state.pool, &normalized, ip.as_deref(), true, Some("password")).await;
     Ok(Json(json!({"ok": true, "requires_totp": false})))
 }
 
@@ -1284,9 +1284,27 @@ async fn verify_user_totp(state: &AppState, user_id: &str, code: &str) -> Result
     let username: String = row.get("username");
     let secret_enc: String = row.get("secret_enc");
     let secret = decrypt_secret(&secret_enc, &state.config.session_secret)?;
-    build_totp(&secret, &username)?
+    let ok = build_totp(&secret, &username)?
         .check_current(code)
-        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "invalid TOTP code"))
+        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "invalid TOTP code"))?;
+    if ok {
+        // Prevent replay within the same 30-second window by atomically recording
+        // the current step. The UPDATE only succeeds if this step hasn't been used yet.
+        let step = current_totp_step();
+        let affected = sqlx::query(
+            "UPDATE local_totp SET last_used_step = $1 WHERE user_id = $2 AND (last_used_step IS NULL OR last_used_step < $1)",
+        )
+        .bind(step)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await
+        .map_err(internal_error)?
+        .rows_affected();
+        if affected == 0 {
+            return Ok(false);
+        }
+    }
+    Ok(ok)
 }
 
 async fn create_trusted_device(
@@ -1381,12 +1399,22 @@ async fn verify_trusted_device(
         .check_current(&proof.code)
         .map_err(|_| api_error(StatusCode::BAD_REQUEST, "invalid trusted device code"))?;
     if ok {
-        sqlx::query("UPDATE local_totp_trusted_devices SET last_used_at = $1 WHERE id = $2")
-            .bind(now_ms())
-            .bind(&proof.id)
-            .execute(&state.pool)
-            .await
-            .map_err(internal_error)?;
+        // Prevent replay within the same 30-second window (atomic step check + last_used update).
+        let step = current_totp_step();
+        let affected = sqlx::query(
+            "UPDATE local_totp_trusted_devices SET last_used_at = $1, last_used_step = $2 WHERE id = $3 AND user_id = $4 AND (last_used_step IS NULL OR last_used_step < $2)",
+        )
+        .bind(now_ms())
+        .bind(step)
+        .bind(&proof.id)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await
+        .map_err(internal_error)?
+        .rows_affected();
+        if affected == 0 {
+            return Ok(false);
+        }
     }
     Ok(ok)
 }
@@ -1714,26 +1742,44 @@ async fn is_login_rate_limited_by_ip(pool: &AnyPool, ip: Option<&str>) -> bool {
         >= LOGIN_RATE_LIMIT_PER_IP
 }
 
-/// Best-effort client IP from trusted proxy headers. Only reliable when the
-/// server sits behind a proxy that sets these (e.g. Traefik); without one there
-/// is no dependable client IP at this layer, so this returns `None`.
-fn client_ip(headers: &HeaderMap) -> Option<String> {
-    headers
+/// Extract client IP from proxy headers, respecting the configured proxy depth.
+///
+/// With depth=1 (default), we trust the rightmost `X-Forwarded-For` entry, which
+/// is appended by the nearest trusted proxy (e.g. Traefik) and cannot be spoofed
+/// by the client. With depth=0, headers are not trusted and `None` is returned.
+fn client_ip(headers: &HeaderMap, trusted_proxy_depth: u8) -> Option<String> {
+    if trusted_proxy_depth == 0 {
+        return None;
+    }
+    let depth = trusted_proxy_depth as usize;
+    // X-Forwarded-For: each proxy appends the connecting client's IP.
+    // With N trusted proxies, the real client IP is at index len-N (0-based).
+    if let Some(xff) = headers
         .get("x-forwarded-for")
-        .or_else(|| headers.get("x-real-ip"))
         .and_then(|v| v.to_str().ok())
-        .map(|v| v.split(',').next().unwrap_or(v).trim().to_string())
+    {
+        let parts: Vec<&str> = xff.split(',').collect();
+        let idx = parts.len().saturating_sub(depth);
+        if let Some(ip) = parts.get(idx).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            return Some(ip.to_string());
+        }
+    }
+    // Fall back to X-Real-IP (set by nginx or explicit Traefik middleware).
+    headers
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
         .filter(|v| !v.is_empty())
+        .map(str::to_string)
 }
 
 async fn record_attempt(
     pool: &AnyPool,
     normalized: &str,
-    headers: &HeaderMap,
+    ip: Option<&str>,
     success: bool,
     reason: Option<&str>,
 ) {
-    let ip = client_ip(headers);
     let _ = sqlx::query(
         r#"
         INSERT INTO local_auth_attempts
@@ -1749,6 +1795,10 @@ async fn record_attempt(
     .bind(reason)
     .execute(pool)
     .await;
+}
+
+fn current_totp_step() -> i64 {
+    chrono::Utc::now().timestamp() / 30
 }
 
 fn normalize_username(username: &str) -> String {
