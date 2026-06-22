@@ -220,12 +220,14 @@ function ShareViewer() {
             {meta?.expires_at && <><br />Expires {formatDate(meta.expires_at)}</>}
           </p>
 
-          <div style={{ width: '100%' }}>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handlePasswordAuth(); }}
+            style={{ width: '100%' }}
+          >
             <input
               type="password"
               value={password}
               onChange={(e) => { setPassword(e.target.value); setAuthError(''); }}
-              onKeyDown={(e) => { if (e.key === 'Enter') handlePasswordAuth(); }}
               placeholder="Enter password"
               autoFocus
               style={{
@@ -250,7 +252,7 @@ function ShareViewer() {
               </div>
             )}
             <button
-              onClick={handlePasswordAuth}
+              type="submit"
               style={{
                 width: '100%',
                 padding: 'var(--space-3)',
@@ -265,7 +267,7 @@ function ShareViewer() {
             >
               Open
             </button>
-          </div>
+          </form>
         </div>
       </div>
     );
