@@ -19,21 +19,156 @@ interface FolderTreeProps {
   transferJobs?: TransferJob[];
 }
 
+interface ShareGroup {
+  name: string;
+  roots: Root[];
+}
+
+/// Split the flat roots list into ungrouped roots followed by named groups,
+/// preserving the backend's ordering (ungrouped first, each group's members
+/// contiguous). A group only appears when it has at least one visible root.
+function partitionRoots(roots: Root[]): { ungrouped: Root[]; groups: ShareGroup[] } {
+  const ungrouped: Root[] = [];
+  const groups: ShareGroup[] = [];
+  const indexByName = new Map<string, number>();
+  for (const root of roots) {
+    if (!root.group) {
+      ungrouped.push(root);
+      continue;
+    }
+    let idx = indexByName.get(root.group);
+    if (idx === undefined) {
+      idx = groups.length;
+      indexByName.set(root.group, idx);
+      groups.push({ name: root.group, roots: [] });
+    }
+    groups[idx].roots.push(root);
+  }
+  return { ungrouped, groups };
+}
+
 export function FolderTree({ roots, activeRoot, activePath, onNavigate, onDropFiles, transferJobs = [] }: FolderTreeProps) {
+  const { ungrouped, groups } = partitionRoots(roots);
+  const renderRoot = (root: Root) => (
+    <TreeRoot
+      key={root.key}
+      root={root}
+      isActive={root.key === activeRoot}
+      activePath={root.key === activeRoot ? activePath : ''}
+      onNavigate={onNavigate}
+      onDropFiles={onDropFiles}
+      transferJobs={transferJobs}
+    />
+  );
+
   return (
     <nav role="tree" aria-label="Folder tree" style={{ userSelect: 'none', width: '100%', overflow: 'hidden' }}>
-      {roots.map((root) => (
-        <TreeRoot
-          key={root.key}
-          root={root}
-          isActive={root.key === activeRoot}
-          activePath={root.key === activeRoot ? activePath : ''}
+      {ungrouped.map(renderRoot)}
+      {groups.map((group) => (
+        <TreeGroup
+          key={group.name}
+          name={group.name}
+          roots={group.roots}
+          activeRoot={activeRoot}
+          activePath={activePath}
           onNavigate={onNavigate}
           onDropFiles={onDropFiles}
           transferJobs={transferJobs}
         />
       ))}
     </nav>
+  );
+}
+
+interface TreeGroupProps {
+  name: string;
+  roots: Root[];
+  activeRoot: string;
+  activePath: string;
+  onNavigate: (root: string, path: string) => void;
+  onDropFiles?: (targetRoot: string, targetPath: string, e: React.DragEvent) => void;
+  transferJobs: TransferJob[];
+}
+
+/// A collapsible sidebar section that groups several shares. The header is not
+/// navigable and is not a drop target — a group is an organizational overlay,
+/// never a filesystem location, so files can only be created or moved into the
+/// shares inside it, not into the group itself.
+function TreeGroup({ name, roots, activeRoot, activePath, onNavigate, onDropFiles, transferJobs }: TreeGroupProps) {
+  const containsActive = roots.some((root) => root.key === activeRoot);
+  const [expanded, setExpanded] = useState(containsActive);
+
+  // Auto-expand when the active share moves into this group (never auto-collapse).
+  useEffect(() => {
+    if (containsActive) setExpanded(true);
+  }, [containsActive]);
+
+  return (
+    <div role="treeitem" aria-expanded={expanded}>
+      <button
+        onClick={() => setExpanded((current) => !current)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowRight') { setExpanded(true); e.preventDefault(); }
+          if (e.key === 'ArrowLeft') { setExpanded(false); e.preventDefault(); }
+        }}
+        title={name}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
+          width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          padding: 'var(--space-1-5) var(--space-4)',
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--color-sidebar-fg)',
+          cursor: 'pointer',
+          fontSize: 'var(--text-sm)',
+          fontWeight: containsActive ? 600 : 500,
+          textAlign: 'left',
+          borderRadius: 0,
+          transition: `all var(--duration-fast) var(--ease-out)`,
+        }}
+        onMouseOver={(e) => { e.currentTarget.style.background = 'var(--color-sidebar-hover)'; }}
+        onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
+      >
+        <span style={{
+          display: 'inline-flex',
+          transition: `transform var(--duration-fast) var(--ease-out)`,
+          transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          color: 'var(--color-fg-subtle)',
+        }}>
+          <Icon name="chevronRight" size={14} />
+        </span>
+        <Icon name="folders" size={16} color="var(--color-fg-muted)" />
+        <span style={{
+          flex: 1,
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {name}
+        </span>
+      </button>
+
+      {expanded && (
+        <div role="group" style={{ paddingLeft: 'var(--space-3)', boxSizing: 'border-box', maxWidth: '100%', overflow: 'hidden' }} className="slide-in">
+          {roots.map((root) => (
+            <TreeRoot
+              key={root.key}
+              root={root}
+              isActive={root.key === activeRoot}
+              activePath={root.key === activeRoot ? activePath : ''}
+              onNavigate={onNavigate}
+              onDropFiles={onDropFiles}
+              transferJobs={transferJobs}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

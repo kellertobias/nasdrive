@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import api from '../api/client';
@@ -407,9 +407,21 @@ export function ColumnBrowser({
         {roots.map((share, index) => {
           const active = share.key === activeRoot;
           const focused = focus.kind === 'share' && focus.index === index;
+          // Roots arrive ordered with each group's members contiguous, so a
+          // non-interactive label is emitted whenever the group changes. The
+          // share buttons below stay one-per-root in array order, keeping the
+          // index-based keyboard navigation intact.
+          const prevGroup = index > 0 ? roots[index - 1].group : null;
+          const showGroupHeader = !!share.group && share.group !== prevGroup;
           return (
+            <Fragment key={share.key}>
+              {showGroupHeader && (
+                <div style={shareGroupHeaderStyle} aria-hidden="true">
+                  <Icon name="folders" size={13} color="var(--color-fg-subtle)" />
+                  <span style={truncateStyle}>{share.group}</span>
+                </div>
+              )}
             <button
-              key={share.key}
               onClick={() => {
                 setFocus({ kind: 'share', index });
                 clearSelection();
@@ -427,6 +439,7 @@ export function ColumnBrowser({
               <span style={truncateStyle}>{share.display_name}</span>
               <UsageRing usage={share.usage} />
             </button>
+            </Fragment>
           );
         })}
       </aside>
@@ -966,6 +979,18 @@ const shareRowStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: 'var(--text-sm)',
   textAlign: 'left',
+};
+
+const shareGroupHeaderStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-2)',
+  padding: 'var(--space-2) var(--space-3) var(--space-1)',
+  color: 'var(--color-fg-subtle)',
+  fontSize: 'var(--text-xs)',
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: 'var(--tracking-wide)',
 };
 
 const truncateStyle: React.CSSProperties = {

@@ -180,6 +180,14 @@ export interface SftpAccessLogEntry {
   error: string | null;
 }
 
+export interface IpBlocklistEntry {
+  ip: string;
+  reason: string | null;
+  blocked_at: number;
+  last_seen_at: number;
+  hit_count: number;
+}
+
 export interface FolderCaps {
   read: boolean;
   write: boolean;
@@ -191,6 +199,9 @@ export interface Root {
   display_name: string;
   kind: 'common' | 'home';
   caps: FolderCaps;
+  /** Optional sidebar group. Roots sharing a group name render nested under a
+   *  collapsible group header. Groups are display-only and not navigable. */
+  group?: string | null;
   usage?: RootUsage | null;
 }
 
@@ -676,6 +687,18 @@ export const api = {
 
   revokeSftpTempUser: (id: string) =>
     apiFetch<{ ok: boolean }>(`/api/admin/sftp-temp-users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  listIpBlocklist: () =>
+    apiFetch<{ entries: IpBlocklistEntry[] }>('/api/admin/ip-blocklist'),
+
+  addIpBlocklistEntry: (ip: string, reason?: string) =>
+    apiFetch<{ ok: boolean; ip: string }>('/api/admin/ip-blocklist', {
+      method: 'POST',
+      body: JSON.stringify({ ip, reason }),
+    }),
+
+  removeIpBlocklistEntry: (ip: string) =>
+    apiFetch<{ ok: boolean }>(`/api/admin/ip-blocklist/${encodeURIComponent(ip)}`, { method: 'DELETE' }),
 
   // ---- Local user admin ----
 

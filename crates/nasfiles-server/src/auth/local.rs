@@ -2008,6 +2008,7 @@ mod tests {
             db_url: String::new(),
             common_folders,
             home_folder_root: Some(PathBuf::from("/home")),
+            share_group_of_folder: HashMap::new(),
             oidc: None,
             sso_username_claim: String::new(),
             sso_display_name_claim: String::new(),

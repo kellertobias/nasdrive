@@ -48,8 +48,31 @@ labels:
 |---|---|
 | `COMMON_FOLDERS` | JSON map of display name to container path, for example `{"Media":"/mnt/media"}`. |
 | `HOME_FOLDER_ROOT` | Optional path for per-user home folders. |
+| `SHARE_GROUPS` | Optional JSON map that groups shares in the sidebar, for example `{"Media":["TV Shows","Movies"]}`. |
 
 Folder names in permission variables must match the keys in `COMMON_FOLDERS`.
+
+### Share Groups
+
+`SHARE_GROUPS` tidies the sidebar on installations with many shares by nesting
+shares under collapsible group headers. It is a JSON object mapping a group
+display name to an ordered list of share keys (the keys from `COMMON_FOLDERS`):
+
+```json
+{"Media": ["TV Shows", "Movies", "Short Films"], "Team": ["Documents"]}
+```
+
+Notes:
+
+- Grouping is a sidebar overlay only. It does not change access — that stays
+  per-share — and a group is never a filesystem location, so files can only be
+  created, moved, or copied into the shares inside a group, not into the group.
+- A group is shown to a user only when they can see at least one share in it;
+  otherwise it is hidden. Shares not listed in any group stay at the top level.
+- Groups are sorted alphabetically by name. A share listed under more than one
+  group is kept in the first (alphabetically) and a warning is logged. Share
+  keys that are not in `COMMON_FOLDERS` are ignored with a warning, and invalid
+  JSON disables grouping (the sidebar falls back to a flat list).
 
 ## Authentication
 

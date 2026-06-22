@@ -82,6 +82,7 @@ pub fn visible_roots(config: &AppConfig, user: &AuthUser) -> Vec<Root> {
                 .get(key)
                 .copied()
                 .unwrap_or_default(),
+            group: config.share_group_of_folder.get(key).cloned(),
             usage: usage_for_path(config.common_folders.get(key).map(PathBuf::as_path)),
         });
     }
@@ -97,11 +98,24 @@ pub fn visible_roots(config: &AppConfig, user: &AuthUser) -> Vec<Root> {
                 write: true,
                 share: true,
             },
+            group: None,
             usage: usage_for_path(config.home_folder_root.as_deref()),
         });
     }
 
+    order_roots_by_group(&mut roots);
+
     roots
+}
+
+/// Order roots so ungrouped entries come first, followed by each group's
+/// members. `None` sorts before `Some`, and the sort is stable, so this
+/// preserves the alphabetical common-folder order within the ungrouped section
+/// and within each group, while keeping every group's members contiguous. A
+/// group only appears here when at least one of its folders is readable by the
+/// user, so empty groups never reach the sidebar.
+fn order_roots_by_group(roots: &mut [Root]) {
+    roots.sort_by(|a, b| a.group.cmp(&b.group));
 }
 
 fn usage_for_path(path: Option<&Path>) -> Option<RootUsage> {
@@ -166,6 +180,76 @@ pub enum RootError {
     Forbidden,
     #[error("internal error")]
     Internal,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn root(key: &str, group: Option<&str>) -> Root {
+        Root {
+            key: key.to_string(),
+            display_name: key.to_string(),
+            kind: RootKind::Common,
+            caps: FolderCaps::default(),
+            group: group.map(str::to_string),
+            usage: None,
+        }
+    }
+
+    #[test]
+    fn order_roots_groups_contiguously_with_ungrouped_first() {
+        // Incoming order mirrors visible_roots: common folders alphabetical
+        // (mixing grouped and ungrouped), then the home root last.
+        let mut roots = vec![
+            root("Documents", None),
+            root("Movies", Some("Media")),
+            root("Projects", Some("Work")),
+            root("TV Shows", Some("Media")),
+            root("Scratch", None),
+            root("~", None),
+        ];
+
+        order_roots_by_group(&mut roots);
+
+        let order: Vec<&str> = roots.iter().map(|r| r.key.as_str()).collect();
+        assert_eq!(
+            order,
+            vec![
+                // Ungrouped first, original (alphabetical) order preserved,
+                // with the home root kept last.
+                "Documents",
+                "Scratch",
+                "~",
+                // "Media" before "Work" (groups alphabetical), members stable.
+                "Movies",
+                "TV Shows",
+                "Projects",
+            ]
+        );
+    }
+
+    #[test]
+    fn no_groups_configured_keeps_a_flat_list_in_original_order() {
+        // When SHARE_GROUPS is not configured every root has `group: None`,
+        // which is exactly how the home and common roots look today. Ordering
+        // must then be a no-op so the sidebar renders the same flat list as
+        // before the feature existed.
+        let original = vec![
+            root("Documents", None),
+            root("Media", None),
+            root("Scratch", None),
+            root("~", None),
+        ];
+        let mut roots = original.clone();
+
+        order_roots_by_group(&mut roots);
+
+        let before: Vec<&str> = original.iter().map(|r| r.key.as_str()).collect();
+        let after: Vec<&str> = roots.iter().map(|r| r.key.as_str()).collect();
+        assert_eq!(before, after);
+        assert!(roots.iter().all(|r| r.group.is_none()));
+    }
 }
 
 impl axum::response::IntoResponse for RootError {

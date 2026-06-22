@@ -26,6 +26,10 @@ pub struct AppConfig {
     pub common_folders: HashMap<String, PathBuf>,
     pub home_folder_root: Option<PathBuf>,
 
+    // Sidebar share groups: folder key -> group display name (from SHARE_GROUPS).
+    // Used purely to organize the sidebar; access is still per-folder.
+    pub share_group_of_folder: HashMap<String, String>,
+
     // SSO — OIDC
     pub oidc: Option<OidcConfig>,
 
@@ -196,6 +200,9 @@ impl AppConfig {
 
         // HOME_FOLDER_ROOT
         let home_folder_root = std::env::var("HOME_FOLDER_ROOT").ok().map(PathBuf::from);
+
+        // SHARE_GROUPS — sidebar grouping of common folders
+        let share_group_of_folder = discover_share_groups(&common_folders);
 
         // OIDC config
         let configured_oidc = match (
@@ -405,6 +412,7 @@ impl AppConfig {
             db_url,
             common_folders,
             home_folder_root,
+            share_group_of_folder,
             oidc,
             sso_username_claim,
             sso_display_name_claim,
@@ -457,6 +465,80 @@ fn parse_source_list_env(key: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(String::from)
         .collect()
+}
+
+/// Parse `SHARE_GROUPS` (a JSON object mapping a group display name to an array
+/// of common-folder keys) into a `folder key → group name` lookup used to
+/// organize the sidebar.
+///
+/// Share groups are a presentation overlay only: they never grant or restrict
+/// access (that stays per-folder) and are never a filesystem location, so file
+/// operations cannot target a group. A group is shown to a user only when at
+/// least one of its folders is visible to them — this falls out naturally from
+/// tagging individual visible roots with their group name.
+///
+/// Validation is lenient (a misconfiguration should not take the server down):
+/// invalid JSON disables grouping with a warning, folders not present in
+/// `COMMON_FOLDERS` are ignored, and a folder listed under several groups keeps
+/// the first group (group names are processed alphabetically for determinism).
+fn discover_share_groups(common_folders: &HashMap<String, PathBuf>) -> HashMap<String, String> {
+    let raw = match std::env::var("SHARE_GROUPS") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => return HashMap::new(),
+    };
+
+    let parsed: HashMap<String, Vec<String>> = match serde_json::from_str(&raw) {
+        Ok(map) => map,
+        Err(e) => {
+            tracing::warn!("invalid SHARE_GROUPS JSON, sidebar grouping disabled: {e}");
+            return HashMap::new();
+        }
+    };
+
+    build_share_group_mapping(&parsed, common_folders)
+}
+
+/// Pure core of [`discover_share_groups`]: turn a parsed `group → [folder keys]`
+/// map into a validated `folder key → group name` lookup. Separated from env
+/// reading so the validation rules can be unit-tested directly.
+fn build_share_group_mapping(
+    parsed: &HashMap<String, Vec<String>>,
+    common_folders: &HashMap<String, PathBuf>,
+) -> HashMap<String, String> {
+    // Process groups in a stable, alphabetical order so conflict resolution
+    // (a folder appearing in more than one group) is deterministic.
+    let mut group_names: Vec<&String> = parsed.keys().collect();
+    group_names.sort();
+
+    let mut mapping: HashMap<String, String> = HashMap::new();
+    for group in group_names {
+        let group_name = group.trim();
+        if group_name.is_empty() {
+            tracing::warn!("SHARE_GROUPS contains an entry with an empty group name; skipping");
+            continue;
+        }
+        for folder in &parsed[group] {
+            let folder = folder.trim();
+            if folder.is_empty() {
+                continue;
+            }
+            if !common_folders.contains_key(folder) {
+                tracing::warn!(
+                    "SHARE_GROUPS group `{group_name}` references folder `{folder}` which is not in COMMON_FOLDERS; ignoring it"
+                );
+                continue;
+            }
+            if let Some(existing) = mapping.get(folder) {
+                tracing::warn!(
+                    "SHARE_GROUPS folder `{folder}` is listed in multiple groups; keeping `{existing}`, ignoring `{group_name}`"
+                );
+                continue;
+            }
+            mapping.insert(folder.to_string(), group_name.to_string());
+        }
+    }
+
+    mapping
 }
 
 /// Discover all SSO_GROUP_*_FOLDERS_{READ,WRITE,SHARE} and SSO_GROUP_*_COMMON_FOLDERS
@@ -664,6 +746,7 @@ mod tests {
             db_url: "".into(),
             common_folders,
             home_folder_root: None,
+            share_group_of_folder: HashMap::new(),
             oidc: None,
             sso_username_claim: "".into(),
             sso_display_name_claim: "".into(),
@@ -708,6 +791,51 @@ mod tests {
         let both_perms =
             compute_folder_permissions(&config, &[String::from("user"), String::from("admin")]);
         assert_eq!(both_perms.len(), 2);
+    }
+
+    #[test]
+    fn share_group_mapping_validates_and_resolves_conflicts() {
+        let mut common_folders = HashMap::new();
+        common_folders.insert("TV Shows".to_string(), PathBuf::from("/srv/tv"));
+        common_folders.insert("Movies".to_string(), PathBuf::from("/srv/movies"));
+        common_folders.insert("Documents".to_string(), PathBuf::from("/srv/docs"));
+
+        let mut parsed: HashMap<String, Vec<String>> = HashMap::new();
+        parsed.insert(
+            "Media".to_string(),
+            vec!["TV Shows".to_string(), "Movies".to_string()],
+        );
+        // "Z-Group" references Movies too (conflict) plus an unknown folder.
+        parsed.insert(
+            "Z-Group".to_string(),
+            vec!["Movies".to_string(), "Nonexistent".to_string()],
+        );
+        // Empty group name and empty folder entries are ignored.
+        parsed.insert("  ".to_string(), vec!["Documents".to_string()]);
+
+        let mapping = build_share_group_mapping(&parsed, &common_folders);
+
+        // Known folders land in their group.
+        assert_eq!(mapping.get("TV Shows"), Some(&"Media".to_string()));
+        // Conflict resolves to the alphabetically-first group ("Media" < "Z-Group").
+        assert_eq!(mapping.get("Movies"), Some(&"Media".to_string()));
+        // Unknown folder is dropped.
+        assert!(!mapping.contains_key("Nonexistent"));
+        // Folder under an empty group name is dropped.
+        assert!(!mapping.contains_key("Documents"));
+        assert_eq!(mapping.len(), 2);
+    }
+
+    #[test]
+    fn share_group_mapping_is_empty_when_nothing_is_configured() {
+        let mut common_folders = HashMap::new();
+        common_folders.insert("Documents".to_string(), PathBuf::from("/srv/docs"));
+        common_folders.insert("Media".to_string(), PathBuf::from("/srv/media"));
+
+        // No groups configured (the `SHARE_GROUPS={}` / unset case) leaves every
+        // folder ungrouped, so the sidebar falls back to a flat list.
+        let mapping = build_share_group_mapping(&HashMap::new(), &common_folders);
+        assert!(mapping.is_empty());
     }
 
     #[test]

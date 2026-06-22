@@ -90,16 +90,74 @@ impl SshSession {
         let mut clients = self.clients.lock().await;
         clients.remove(&channel_id)
     }
+
+    fn reject() -> Auth {
+        Auth::Reject {
+            proceed_with_methods: None,
+            partial_success: false,
+        }
+    }
+
+    /// Pre-authentication guard applied to every auth attempt. Returns
+    /// `Some(reject)` when the connection must be denied outright:
+    ///
+    /// - the client IP is already on the blocklist, or
+    /// - the username is `root` — a root login attempt immediately adds the
+    ///   source IP to the blocklist.
+    ///
+    /// Returns `None` to let normal authentication proceed.
+    async fn auth_guard(&self, user: &str) -> Option<Auth> {
+        let ip = self.remote_addr.map(|addr| addr.ip().to_string());
+
+        if let Some(ip) = ip.as_deref()
+            && crate::blocklist::is_blocked(&self.state.pool, ip).await
+        {
+            tracing::warn!(
+                user,
+                remote = ?self.remote_addr,
+                "SFTP auth rejected: source IP is blocklisted"
+            );
+            return Some(Self::reject());
+        }
+
+        if user == "root" {
+            if let Some(ip) = ip.as_deref() {
+                crate::blocklist::block(&self.state.pool, ip, "root SFTP login attempt").await;
+            }
+            audit_event(
+                &self.state,
+                "auth_root",
+                user,
+                "blocked",
+                None,
+                None,
+                self.remote_addr,
+                false,
+                Some("root SFTP login attempt — IP blocklisted"),
+            )
+            .await;
+            return Some(Self::reject());
+        }
+
+        None
+    }
 }
 
 impl russh::server::Handler for SshSession {
     type Error = anyhow::Error;
 
-    async fn auth_password(&mut self, _user: &str, _password: &str) -> Result<Auth, Self::Error> {
-        Ok(Auth::Reject {
-            proceed_with_methods: None,
-            partial_success: false,
-        })
+    async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
+        if let Some(rejection) = self.auth_guard(user).await {
+            return Ok(rejection);
+        }
+        Ok(Self::reject())
+    }
+
+    async fn auth_password(&mut self, user: &str, _password: &str) -> Result<Auth, Self::Error> {
+        if let Some(rejection) = self.auth_guard(user).await {
+            return Ok(rejection);
+        }
+        Ok(Self::reject())
     }
 
     async fn auth_publickey_offered(
@@ -107,6 +165,9 @@ impl russh::server::Handler for SshSession {
         user: &str,
         public_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<Auth, Self::Error> {
+        if let Some(rejection) = self.auth_guard(user).await {
+            return Ok(rejection);
+        }
         let normalized = normalize_russh_public_key(public_key)?;
         if public_key_can_authenticate(&self.state, user, &normalized.fingerprint).await? {
             tracing::info!(
@@ -141,6 +202,9 @@ impl russh::server::Handler for SshSession {
         user: &str,
         public_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<Auth, Self::Error> {
+        if let Some(rejection) = self.auth_guard(user).await {
+            return Ok(rejection);
+        }
         let normalized = normalize_russh_public_key(public_key)?;
         let principal = resolve_principal(&self.state, user, &normalized.fingerprint).await?;
 
@@ -371,6 +435,7 @@ impl SftpSession {
                     write: temp.can_write,
                     share: false,
                 },
+                group: None,
                 usage: None,
             }],
         }

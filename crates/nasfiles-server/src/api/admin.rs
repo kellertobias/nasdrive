@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     response::IntoResponse,
 };
 use serde::Deserialize;
@@ -234,6 +234,86 @@ pub async fn list_users(
     Ok(Json(serde_json::json!({ "users": users })))
 }
 
+/// GET /api/admin/ip-blocklist — list blocklisted IPs (admin only).
+pub async fn list_blocklist(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+) -> Result<impl IntoResponse, axum::response::Response> {
+    require_admin(&user)?;
+
+    let entries = crate::blocklist::list(&state.pool).await.map_err(|e| {
+        tracing::error!("admin blocklist query: {e}");
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "database error"})),
+        )
+            .into_response()
+    })?;
+
+    Ok(Json(serde_json::json!({ "entries": entries })))
+}
+
+/// POST /api/admin/ip-blocklist — manually block an IP (admin only).
+pub async fn add_blocklist_entry(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Json(body): Json<BlockIpRequest>,
+) -> Result<impl IntoResponse, axum::response::Response> {
+    require_admin(&user)?;
+
+    // Parse + normalize to canonical form so manual entries match the
+    // representation stored for automatic (SFTP) blocks.
+    let ip: std::net::IpAddr = body.ip.trim().parse().map_err(|_| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "invalid IP address"})),
+        )
+            .into_response()
+    })?;
+    let canonical = ip.to_string();
+
+    let reason = body
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("manually blocked by admin");
+
+    crate::blocklist::block(&state.pool, &canonical, reason).await;
+
+    Ok(Json(serde_json::json!({ "ok": true, "ip": canonical })))
+}
+
+/// DELETE /api/admin/ip-blocklist/{ip} — remove an IP from the blocklist (admin only).
+pub async fn remove_blocklist_entry(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(ip): Path<String>,
+) -> Result<impl IntoResponse, axum::response::Response> {
+    require_admin(&user)?;
+
+    let removed = crate::blocklist::unblock(&state.pool, &ip)
+        .await
+        .map_err(|e| {
+            tracing::error!("admin blocklist delete: {e}");
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "database error"})),
+            )
+                .into_response()
+        })?;
+
+    if !removed {
+        return Err((
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "IP not found on blocklist"})),
+        )
+            .into_response());
+    }
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
 // ---------------------------------------------------------------------------
 // Query / row types
 // ---------------------------------------------------------------------------
@@ -244,6 +324,13 @@ pub struct AccessLogQuery {
     pub limit: i64,
     #[serde(default)]
     pub offset: i64,
+}
+
+#[derive(Deserialize)]
+pub struct BlockIpRequest {
+    pub ip: String,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[derive(sqlx::FromRow, serde::Serialize)]

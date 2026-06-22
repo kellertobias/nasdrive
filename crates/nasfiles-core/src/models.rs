@@ -110,6 +110,12 @@ pub struct Root {
     pub display_name: String,
     pub kind: RootKind,
     pub caps: FolderCaps,
+    /// Optional sidebar group this root belongs to. Roots that share the same
+    /// group name are displayed nested under a single collapsible group header.
+    /// A group is purely an organizational overlay for the sidebar — it is never
+    /// a filesystem location and cannot be a target for file operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<RootUsage>,
 }

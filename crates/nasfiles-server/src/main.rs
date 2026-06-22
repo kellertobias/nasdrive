@@ -1,6 +1,7 @@
 mod api;
 mod assets;
 mod auth;
+mod blocklist;
 mod config;
 mod db;
 mod fs;
@@ -189,6 +190,12 @@ async fn main() -> anyhow::Result<()> {
         // Admin routes
         .route("/admin/shares", get(api::admin::list_all_shares))
         .route("/admin/access-log", get(api::admin::list_access_log))
+        .route("/admin/ip-blocklist", get(api::admin::list_blocklist))
+        .route("/admin/ip-blocklist", post(api::admin::add_blocklist_entry))
+        .route(
+            "/admin/ip-blocklist/{ip}",
+            axum::routing::delete(api::admin::remove_blocklist_entry),
+        )
         .route("/admin/users", get(api::admin::list_users))
         .route("/admin/users", post(auth::local::create_user))
         .route(

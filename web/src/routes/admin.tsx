@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import api, {
 	type AdminUserDetails,
 	type FolderCaps,
+	type IpBlocklistEntry,
 	type PasskeyInfo,
 	type Root,
 	type SftpAccessLogEntry,
@@ -44,7 +45,13 @@ interface AccessLogEntry {
 	path: string | null;
 }
 
-type Tab = "shares" | "access-log" | "users" | "sftp" | "sftp-log";
+type Tab =
+	| "shares"
+	| "access-log"
+	| "users"
+	| "sftp"
+	| "sftp-log"
+	| "blocklist";
 
 function AdminDashboard() {
 	const [tab, setTab] = useState<Tab>("shares");
@@ -92,6 +99,7 @@ function AdminDashboard() {
 		{ key: "users", label: "Users" },
 		{ key: "sftp", label: "SFTP Guests" },
 		{ key: "sftp-log", label: "SFTP Log" },
+		{ key: "blocklist", label: "IP Blocklist" },
 	];
 
 	return (
@@ -200,6 +208,7 @@ function AdminDashboard() {
 					{tab === "users" && <UsersTab />}
 					{tab === "sftp" && <SftpGuestsTab />}
 					{tab === "sftp-log" && <SftpAccessLogTab />}
+					{tab === "blocklist" && <BlocklistTab />}
 				</div>
 			</div>
 		</div>
@@ -229,6 +238,7 @@ function SftpAccessLogTab() {
 					<th style={thStyle}>IP</th>
 					<th style={thStyle}>Result</th>
 					<th style={thStyle}>Error</th>
+						<th style={thStyle} />
 				</tr>
 			</thead>
 			<tbody>
@@ -266,10 +276,210 @@ function SftpAccessLogTab() {
 							{entry.success ? "OK" : "Failed"}
 						</td>
 						<td style={tdStyle}>{entry.error || "—"}</td>
+						<td style={tdStyle}>
+							{entry.ip ? (
+								<BlockIpButton
+									ip={entry.ip}
+									reason={`SFTP ${entry.action} from ${entry.principal_kind}`}
+								/>
+							) : null}
+						</td>
 					</tr>
 				))}
 			</tbody>
 		</table>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// IP blocklist tab
+// ---------------------------------------------------------------------------
+
+function BlocklistTab() {
+	const queryClient = useQueryClient();
+	const [ip, setIp] = useState("");
+	const [reason, setReason] = useState("");
+	const [error, setError] = useState("");
+
+	const { data, isLoading } = useQuery({
+		queryKey: ["admin-ip-blocklist"],
+		queryFn: api.listIpBlocklist,
+		staleTime: 10_000,
+	});
+
+	const addMutation = useMutation({
+		mutationFn: () =>
+			api.addIpBlocklistEntry(ip.trim(), reason.trim() || undefined),
+		onSuccess: () => {
+			setIp("");
+			setReason("");
+			setError("");
+			queryClient.invalidateQueries({ queryKey: ["admin-ip-blocklist"] });
+		},
+		onError: (err) =>
+			setError(err instanceof Error ? err.message : String(err)),
+	});
+
+	const removeMutation = useMutation({
+		mutationFn: api.removeIpBlocklistEntry,
+		onSuccess: () =>
+			queryClient.invalidateQueries({ queryKey: ["admin-ip-blocklist"] }),
+	});
+
+	const entries: IpBlocklistEntry[] = data?.entries ?? [];
+
+	return (
+		<div>
+			<p
+				style={{
+					margin: "0 0 var(--space-4)",
+					color: "var(--color-fg-muted)",
+					fontSize: "var(--text-sm)",
+				}}
+			>
+				Blocked IPs are denied SFTP authentication regardless of credentials.
+				Addresses that attempt a root SFTP login are added here automatically.
+				Remove an entry to lift the block.
+			</p>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: "var(--space-2)",
+					marginBottom: "var(--space-5)",
+					flexWrap: "wrap",
+				}}
+			>
+				<input
+					value={ip}
+					onChange={(e) => setIp(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter" && ip.trim() && !addMutation.isPending) {
+							addMutation.mutate();
+						}
+					}}
+					placeholder="IP address (e.g. 203.0.113.5)"
+					style={{ ...inputStyle, width: 220, fontFamily: "monospace" }}
+				/>
+				<input
+					value={reason}
+					onChange={(e) => setReason(e.target.value)}
+					placeholder="Reason (optional)"
+					style={{ ...inputStyle, width: 220 }}
+				/>
+				<button
+					type="button"
+					disabled={!ip.trim() || addMutation.isPending}
+					onClick={() => addMutation.mutate()}
+					style={{
+						...actionButtonStyle,
+						background: "var(--color-accent)",
+						color: "var(--color-accent-fg)",
+						borderColor: "var(--color-accent)",
+					}}
+				>
+					<Icon name="alertTriangle" size={16} />
+					Block IP
+				</button>
+				{error && (
+					<span
+						style={{
+							color: "var(--color-danger)",
+							fontSize: "var(--text-sm)",
+						}}
+					>
+						{error}
+					</span>
+				)}
+			</div>
+			{isLoading ? (
+				<LoadingRows />
+			) : entries.length === 0 ? (
+				<EmptyMessage text="No blocked IPs" />
+			) : (
+				<table style={tableStyle}>
+					<thead>
+						<tr>
+							<th style={thStyle}>IP Address</th>
+							<th style={thStyle}>Reason</th>
+							<th style={thStyle}>Blocked</th>
+							<th style={thStyle}>Last attempt</th>
+							<th style={thStyle}>Attempts</th>
+							<th style={thStyle} />
+						</tr>
+					</thead>
+					<tbody>
+						{entries.map((entry) => (
+							<tr key={entry.ip}>
+								<td style={tdStyle}>
+									<code style={{ fontSize: "var(--text-xs)" }}>{entry.ip}</code>
+								</td>
+								<td style={tdStyle}>{entry.reason || "—"}</td>
+								<td style={tdStyle}>
+									{new Date(entry.blocked_at).toLocaleString()}
+								</td>
+								<td style={tdStyle}>
+									{new Date(entry.last_seen_at).toLocaleString()}
+								</td>
+								<td style={tdStyle}>{entry.hit_count}</td>
+								<td style={tdStyle}>
+									<div
+										style={{ display: "flex", justifyContent: "flex-end" }}
+									>
+										<button
+											type="button"
+											disabled={removeMutation.isPending}
+											onClick={() => removeMutation.mutate(entry.ip)}
+											style={{
+												...actionButtonStyle,
+												color: "var(--color-danger)",
+											}}
+										>
+											<Icon name="x" size={16} />
+											Remove
+										</button>
+									</div>
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			)}
+		</div>
+	);
+}
+
+/**
+ * Inline "Block" action for a log row. Adds the given IP to the blocklist and
+ * shows a "Blocked" confirmation state. Refreshes the IP Blocklist tab.
+ */
+function BlockIpButton({ ip, reason }: { ip: string; reason: string }) {
+	const queryClient = useQueryClient();
+	const [blocked, setBlocked] = useState(false);
+
+	const mutation = useMutation({
+		mutationFn: () => api.addIpBlocklistEntry(ip, reason),
+		onSuccess: () => {
+			setBlocked(true);
+			queryClient.invalidateQueries({ queryKey: ["admin-ip-blocklist"] });
+		},
+	});
+
+	return (
+		<button
+			type="button"
+			disabled={blocked || mutation.isPending}
+			onClick={() => mutation.mutate()}
+			title={blocked ? `${ip} is blocked` : `Block ${ip}`}
+			style={{
+				...actionButtonStyle,
+				padding: "var(--space-1) var(--space-2)",
+				color: blocked ? "var(--color-fg-muted)" : "var(--color-danger)",
+			}}
+		>
+			<Icon name={blocked ? "checkCircle" : "alertTriangle"} size={14} />
+			{blocked ? "Blocked" : "Block"}
+		</button>
 	);
 }
 
@@ -667,6 +877,7 @@ function AccessLogTab() {
 					<th style={thStyle}>Share</th>
 					<th style={thStyle}>Path</th>
 					<th style={thStyle}>IP</th>
+					<th style={thStyle} />
 				</tr>
 			</thead>
 			<tbody>
@@ -700,6 +911,11 @@ function AccessLogTab() {
 						</td>
 						<td style={tdStyle}>{e.path || "—"}</td>
 						<td style={tdStyle}>{e.ip || "—"}</td>
+						<td style={tdStyle}>
+							{e.ip ? (
+								<BlockIpButton ip={e.ip} reason={`access log (${e.action})`} />
+							) : null}
+						</td>
 					</tr>
 				))}
 			</tbody>

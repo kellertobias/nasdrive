@@ -119,6 +119,8 @@ COMMON_FOLDERS='{"Media":"/srv/media","Documents":"/srv/docs"}'
 
 The server canonicalizes paths and keeps every operation inside the configured roots. The browser UI talks to the Rust API. Metadata, users, shares, SFTP guests, and thumbnail cache data live under `DATA_DIR` by default.
 
+On installations with many shares you can tidy the sidebar by grouping shares under collapsible headers with `SHARE_GROUPS` (for example `{"Media":["TV Shows","Movies"]}`). Grouping is purely a sidebar overlay — it never changes access, and a group is shown only when a user can see at least one share inside it. See [Configuration reference](docs/configuration.md) for details.
+
 ```text
 Browser UI
    |
