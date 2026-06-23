@@ -324,9 +324,8 @@ pub async fn callback(
             external_id = %external_id,
             "User rejected at login: unsafe username ({reason})"
         );
-        let msg = format!(
-            "Your account username is not allowed ({reason}). Contact your administrator."
-        );
+        let msg =
+            format!("Your account username is not allowed ({reason}). Contact your administrator.");
         return Ok((
             axum::http::StatusCode::FORBIDDEN,
             axum::response::Html(format!("<h1>Access Denied</h1><p>{}</p>", msg)),

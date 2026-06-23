@@ -8,114 +8,114 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as STokenSplatRouteImport } from './routes/s.$token.$'
-import { Route as RRootSplatRouteImport } from './routes/r.$root.$'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as ProfileRouteImport } from "./routes/profile";
+import { Route as AdminRouteImport } from "./routes/admin";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as STokenSplatRouteImport } from "./routes/s.$token.$";
+import { Route as RRootSplatRouteImport } from "./routes/r.$root.$";
 
 const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
+  id: "/profile",
+  path: "/profile",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+  id: "/admin",
+  path: "/admin",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const STokenSplatRoute = STokenSplatRouteImport.update({
-  id: '/s/$token/$',
-  path: '/s/$token/$',
+  id: "/s/$token/$",
+  path: "/s/$token/$",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const RRootSplatRoute = RRootSplatRouteImport.update({
-  id: '/r/$root/$',
-  path: '/r/$root/$',
+  id: "/r/$root/$",
+  path: "/r/$root/$",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
-  '/profile': typeof ProfileRoute
-  '/r/$root/$': typeof RRootSplatRoute
-  '/s/$token/$': typeof STokenSplatRoute
+  "/": typeof IndexRoute;
+  "/admin": typeof AdminRoute;
+  "/profile": typeof ProfileRoute;
+  "/r/$root/$": typeof RRootSplatRoute;
+  "/s/$token/$": typeof STokenSplatRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
-  '/profile': typeof ProfileRoute
-  '/r/$root/$': typeof RRootSplatRoute
-  '/s/$token/$': typeof STokenSplatRoute
+  "/": typeof IndexRoute;
+  "/admin": typeof AdminRoute;
+  "/profile": typeof ProfileRoute;
+  "/r/$root/$": typeof RRootSplatRoute;
+  "/s/$token/$": typeof STokenSplatRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
-  '/profile': typeof ProfileRoute
-  '/r/$root/$': typeof RRootSplatRoute
-  '/s/$token/$': typeof STokenSplatRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/admin": typeof AdminRoute;
+  "/profile": typeof ProfileRoute;
+  "/r/$root/$": typeof RRootSplatRoute;
+  "/s/$token/$": typeof STokenSplatRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/profile' | '/r/$root/$' | '/s/$token/$'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/profile' | '/r/$root/$' | '/s/$token/$'
-  id: '__root__' | '/' | '/admin' | '/profile' | '/r/$root/$' | '/s/$token/$'
-  fileRoutesById: FileRoutesById
+  fileRoutesByFullPath: FileRoutesByFullPath;
+  fullPaths: "/" | "/admin" | "/profile" | "/r/$root/$" | "/s/$token/$";
+  fileRoutesByTo: FileRoutesByTo;
+  to: "/" | "/admin" | "/profile" | "/r/$root/$" | "/s/$token/$";
+  id: "__root__" | "/" | "/admin" | "/profile" | "/r/$root/$" | "/s/$token/$";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AdminRoute: typeof AdminRoute
-  ProfileRoute: typeof ProfileRoute
-  RRootSplatRoute: typeof RRootSplatRoute
-  STokenSplatRoute: typeof STokenSplatRoute
+  IndexRoute: typeof IndexRoute;
+  AdminRoute: typeof AdminRoute;
+  ProfileRoute: typeof ProfileRoute;
+  RRootSplatRoute: typeof RRootSplatRoute;
+  STokenSplatRoute: typeof STokenSplatRoute;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/s/$token/$': {
-      id: '/s/$token/$'
-      path: '/s/$token/$'
-      fullPath: '/s/$token/$'
-      preLoaderRoute: typeof STokenSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/r/$root/$': {
-      id: '/r/$root/$'
-      path: '/r/$root/$'
-      fullPath: '/r/$root/$'
-      preLoaderRoute: typeof RRootSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+    "/profile": {
+      id: "/profile";
+      path: "/profile";
+      fullPath: "/profile";
+      preLoaderRoute: typeof ProfileRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/admin": {
+      id: "/admin";
+      path: "/admin";
+      fullPath: "/admin";
+      preLoaderRoute: typeof AdminRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/s/$token/$": {
+      id: "/s/$token/$";
+      path: "/s/$token/$";
+      fullPath: "/s/$token/$";
+      preLoaderRoute: typeof STokenSplatRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/r/$root/$": {
+      id: "/r/$root/$";
+      path: "/r/$root/$";
+      fullPath: "/r/$root/$";
+      preLoaderRoute: typeof RRootSplatRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
@@ -125,7 +125,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   RRootSplatRoute: RRootSplatRoute,
   STokenSplatRoute: STokenSplatRoute,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();

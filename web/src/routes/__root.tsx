@@ -1,7 +1,7 @@
-import { createRootRoute, Outlet } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import api from '../api/client';
-import { Icon } from '../components/Icon';
+import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import api from "../api/client";
+import { Icon } from "../components/Icon";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -9,7 +9,7 @@ export const Route = createRootRoute({
 
 function DevModeBanner() {
   const { data } = useQuery({
-    queryKey: ['auth-config'],
+    queryKey: ["auth-config"],
     queryFn: api.authConfig,
     retry: false,
     staleTime: 5 * 60 * 1000,
@@ -23,18 +23,18 @@ function DevModeBanner() {
     <div
       role="alert"
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         gap: 8,
-        width: '100%',
-        padding: '8px 16px',
-        background: 'var(--color-danger)',
-        color: 'var(--color-danger-fg)',
+        width: "100%",
+        padding: "8px 16px",
+        background: "var(--color-danger)",
+        color: "var(--color-danger-fg)",
         fontWeight: 600,
         fontSize: 13,
-        textAlign: 'center',
-        letterSpacing: '0.01em',
+        textAlign: "center",
+        letterSpacing: "0.01em",
         zIndex: 1000,
       }}
     >
@@ -49,7 +49,7 @@ function DevModeBanner() {
 
 function RootLayout() {
   const { isLoading } = useQuery({
-    queryKey: ['me'],
+    queryKey: ["me"],
     queryFn: api.me,
     retry: false,
     staleTime: 5 * 60 * 1000,
@@ -59,18 +59,21 @@ function RootLayout() {
     return (
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          background: 'var(--color-bg)',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+          background: "var(--color-bg)",
         }}
       >
-        <div className="shimmer" style={{
-          width: 200,
-          height: 20,
-          borderRadius: 'var(--radius-md)',
-        }} />
+        <div
+          className="shimmer"
+          style={{
+            width: 200,
+            height: 20,
+            borderRadius: "var(--radius-md)",
+          }}
+        />
       </div>
     );
   }

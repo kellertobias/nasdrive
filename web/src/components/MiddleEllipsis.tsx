@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from "react";
 
 interface MiddleEllipsisProps {
   text: string;
@@ -17,8 +17,8 @@ export function MiddleEllipsis({ text, maxWidth = 200 }: MiddleEllipsisProps) {
     const container = containerRef.current;
     if (!container) return;
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const computedStyle = getComputedStyle(container);
@@ -32,14 +32,14 @@ export function MiddleEllipsis({ text, maxWidth = 200 }: MiddleEllipsisProps) {
       return;
     }
 
-    const ellipsis = '…';
+    const ellipsis = "…";
     const ellipsisWidth = ctx.measureText(ellipsis).width;
     const availableWidth = containerWidth - ellipsisWidth;
 
     // Find the extension (last dot and everything after)
-    const lastDot = text.lastIndexOf('.');
+    const lastDot = text.lastIndexOf(".");
     let start = text;
-    let end = '';
+    let end = "";
 
     if (lastDot > 0) {
       end = text.substring(lastDot);
@@ -79,10 +79,10 @@ export function MiddleEllipsis({ text, maxWidth = 200 }: MiddleEllipsisProps) {
       ref={containerRef}
       title={text}
       style={{
-        display: 'inline-block',
+        display: "inline-block",
         maxWidth,
-        overflow: 'hidden',
-        whiteSpace: 'nowrap',
+        overflow: "hidden",
+        whiteSpace: "nowrap",
       }}
     >
       {displayText}

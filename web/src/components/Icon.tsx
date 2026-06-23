@@ -1,4 +1,4 @@
-import { ICONS } from '../lib/icons';
+import { ICONS } from "../lib/icons";
 
 interface IconProps {
   name: keyof typeof ICONS;
@@ -18,13 +18,13 @@ export function Icon({ name, size = 18, color, className, style }: IconProps) {
       className={className}
       aria-hidden="true"
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         width: size,
         height: size,
         flexShrink: 0,
-        color: color || 'currentColor',
+        color: color || "currentColor",
         ...style,
       }}
       dangerouslySetInnerHTML={{ __html: ICONS[name] }}
@@ -48,9 +48,9 @@ export function FileIcon({ svg, color, size = 18, className }: FileIconProps) {
       className={className}
       aria-hidden="true"
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         width: size,
         height: size,
         flexShrink: 0,

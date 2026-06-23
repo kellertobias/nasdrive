@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { Icon } from './Icon';
-import { ICONS } from '../lib/icons';
+import { useEffect, useRef, useState } from "react";
+import { Icon } from "./Icon";
+import { ICONS } from "../lib/icons";
 
 interface ContextMenuItem {
   label: string;
@@ -48,14 +48,14 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     };
 
-    document.addEventListener('mousedown', handleClick);
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handleClick);
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [onClose]);
 
@@ -65,14 +65,14 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       role="menu"
       className="fade-in"
       style={{
-        position: 'fixed',
+        position: "fixed",
         left: position.x,
         top: position.y,
-        background: 'var(--color-bg)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-lg)',
-        boxShadow: 'var(--shadow-lg)',
-        padding: 'var(--space-1)',
+        background: "var(--color-bg)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-lg)",
+        padding: "var(--space-1)",
         minWidth: 180,
         zIndex: 200,
       }}
@@ -84,8 +84,8 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               key={`sep-${i}`}
               style={{
                 height: 1,
-                background: 'var(--color-border-muted)',
-                margin: 'var(--space-1) var(--space-2)',
+                background: "var(--color-border-muted)",
+                margin: "var(--space-1) var(--space-2)",
               }}
             />
           );
@@ -103,40 +103,42 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
               }
             }}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-              width: '100%',
-              padding: 'var(--space-2) var(--space-3)',
-              border: 'none',
-              background: 'transparent',
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-2)",
+              width: "100%",
+              padding: "var(--space-2) var(--space-3)",
+              border: "none",
+              background: "transparent",
               color: item.danger
-                ? 'var(--color-danger)'
+                ? "var(--color-danger)"
                 : item.disabled
-                  ? 'var(--color-fg-subtle)'
-                  : 'var(--color-fg)',
-              cursor: item.disabled ? 'default' : 'pointer',
-              fontSize: 'var(--text-sm)',
-              borderRadius: 'var(--radius-md)',
-              textAlign: 'left',
+                  ? "var(--color-fg-subtle)"
+                  : "var(--color-fg)",
+              cursor: item.disabled ? "default" : "pointer",
+              fontSize: "var(--text-sm)",
+              borderRadius: "var(--radius-md)",
+              textAlign: "left",
               opacity: item.disabled ? 0.5 : 1,
-              transition: 'background var(--duration-fast) var(--ease-out)',
+              transition: "background var(--duration-fast) var(--ease-out)",
             }}
             onMouseOver={(e) => {
               if (!item.disabled) {
                 e.currentTarget.style.background = item.danger
-                  ? 'var(--color-danger-muted)'
-                  : 'var(--color-bg-muted)';
+                  ? "var(--color-danger-muted)"
+                  : "var(--color-bg-muted)";
               }
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.background = "transparent";
             }}
           >
             <Icon
               name={item.iconName}
               size={16}
-              color={item.danger ? 'var(--color-danger)' : 'var(--color-fg-muted)'}
+              color={
+                item.danger ? "var(--color-danger)" : "var(--color-fg-muted)"
+              }
             />
             {item.label}
           </button>

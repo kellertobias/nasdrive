@@ -1,36 +1,51 @@
-import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import api, { formatApiError, formatApiErrorDetails } from '../api/client';
-import type { FileEntry } from '../api/client';
-import type { ExtractMode } from '../api/client';
-import { FolderTree } from '../components/FolderTree';
-import { FileGrid } from '../components/FileGrid';
-import { FileList } from '../components/FileList';
-import { ColumnBrowser } from '../components/ColumnBrowser';
-import { TopBar } from '../components/TopBar';
-import { Breadcrumb } from '../components/Breadcrumb';
-import { EmptyState } from '../components/EmptyState';
-import { Icon } from '../components/Icon';
-import { UploadZone, type UploadZoneHandle } from '../components/UploadZone';
-import { CreateFolderDialog } from '../components/CreateFolderDialog';
-import { RenameDialog } from '../components/RenameDialog';
-import { ContextMenu } from '../components/ContextMenu';
-import type { ContextMenuItem } from '../components/ContextMenu';
-import { ShareDialog } from '../components/ShareDialog';
-import { PreviewPane } from '../components/PreviewPane';
-import { DirectoryReadme } from '../components/DirectoryReadme';
-import { FileDetailsPane, type FileDetailsSelection } from '../components/FileDetailsPane';
-import { ErrorDialog, ErrorToasts } from '../components/ErrorNotice';
-import type { ErrorNoticeData } from '../components/ErrorNotice';
-import { useViewStore } from '../state/view';
-import { getFileDragPayload, hasNasfilesDrag, isDemoDropTarget, isSelfOrDescendantDrop } from '../lib/fileDrag';
-import { useGlobalDragCleanup } from '../lib/dragState';
-import { isActiveTransferJob, transferJobsForTarget } from '../lib/transferJobs';
-import { formatFileSize } from '../lib/icons';
-import type { DirectoryListing, TransferJob } from '../api/client';
+import {
+  createFileRoute,
+  useNavigate,
+  useParams,
+} from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import api, { formatApiError, formatApiErrorDetails } from "../api/client";
+import type { FileEntry } from "../api/client";
+import type { ExtractMode } from "../api/client";
+import { FolderTree } from "../components/FolderTree";
+import { FileGrid } from "../components/FileGrid";
+import { FileList } from "../components/FileList";
+import { ColumnBrowser } from "../components/ColumnBrowser";
+import { TopBar } from "../components/TopBar";
+import { Breadcrumb } from "../components/Breadcrumb";
+import { EmptyState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
+import { UploadZone, type UploadZoneHandle } from "../components/UploadZone";
+import { CreateFolderDialog } from "../components/CreateFolderDialog";
+import { RenameDialog } from "../components/RenameDialog";
+import { ContextMenu } from "../components/ContextMenu";
+import type { ContextMenuItem } from "../components/ContextMenu";
+import { ShareDialog } from "../components/ShareDialog";
+import { PreviewPane } from "../components/PreviewPane";
+import { DirectoryReadme } from "../components/DirectoryReadme";
+import {
+  FileDetailsPane,
+  type FileDetailsSelection,
+} from "../components/FileDetailsPane";
+import { ErrorDialog, ErrorToasts } from "../components/ErrorNotice";
+import type { ErrorNoticeData } from "../components/ErrorNotice";
+import { useViewStore } from "../state/view";
+import {
+  getFileDragPayload,
+  hasNasfilesDrag,
+  isDemoDropTarget,
+  isSelfOrDescendantDrop,
+} from "../lib/fileDrag";
+import { useGlobalDragCleanup } from "../lib/dragState";
+import {
+  isActiveTransferJob,
+  transferJobsForTarget,
+} from "../lib/transferJobs";
+import { formatFileSize } from "../lib/icons";
+import type { DirectoryListing, TransferJob } from "../api/client";
 
-export const Route = createFileRoute('/r/$root/$')({
+export const Route = createFileRoute("/r/$root/$")({
   component: FileBrowser,
 });
 
@@ -40,7 +55,7 @@ interface DeleteJobNotice {
 }
 
 const SIDEBAR_WIDTH = { min: 180, max: 420 };
-const DEMO_TRANSFER_JOB_STORAGE_KEY = 'nasfiles-demo-transfer-job';
+const DEMO_TRANSFER_JOB_STORAGE_KEY = "nasfiles-demo-transfer-job";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -49,10 +64,15 @@ function clamp(value: number, min: number, max: number) {
 function isEditableShortcutTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
 
-  const editable = target.closest('input, textarea, select, [role="textbox"], [contenteditable]');
+  const editable = target.closest(
+    'input, textarea, select, [role="textbox"], [contenteditable]',
+  );
   if (!editable) return false;
 
-  if (editable instanceof HTMLElement && editable.getAttribute('contenteditable') === 'false') {
+  if (
+    editable instanceof HTMLElement &&
+    editable.getAttribute("contenteditable") === "false"
+  ) {
     return false;
   }
 
@@ -60,40 +80,51 @@ function isEditableShortcutTarget(target: EventTarget | null): boolean {
 }
 
 function demoTransferJobsFromLocalStorage(): TransferJob[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === "undefined") return [];
 
   const raw = window.localStorage.getItem(DEMO_TRANSFER_JOB_STORAGE_KEY);
   if (!raw) return [];
 
   try {
-    const value = JSON.parse(raw) as Partial<TransferJob> | Partial<TransferJob>[];
+    const value = JSON.parse(raw) as
+      | Partial<TransferJob>
+      | Partial<TransferJob>[];
     const values = Array.isArray(value) ? value : [value];
     const now = Date.now();
 
     return values
-      .filter((job) =>
-        (job.operation === 'move' || job.operation === 'copy') &&
-        typeof job.source_root === 'string' &&
-        typeof job.dest_root === 'string' &&
-        typeof job.dest_path === 'string' &&
-        Array.isArray(job.paths) &&
-        job.paths.every((path) => typeof path === 'string'),
+      .filter(
+        (job) =>
+          (job.operation === "move" || job.operation === "copy") &&
+          typeof job.source_root === "string" &&
+          typeof job.dest_root === "string" &&
+          typeof job.dest_path === "string" &&
+          Array.isArray(job.paths) &&
+          job.paths.every((path) => typeof path === "string"),
       )
       .map((job, index) => ({
-        id: typeof job.id === 'string' ? job.id : `demo-transfer-${index}`,
-        operation: job.operation as 'move' | 'copy',
+        id: typeof job.id === "string" ? job.id : `demo-transfer-${index}`,
+        operation: job.operation as "move" | "copy",
         source_root: job.source_root as string,
         dest_root: job.dest_root as string,
         dest_path: job.dest_path as string,
         paths: job.paths as string[],
-        status: job.status === 'queued' ? 'queued' : 'running',
-        total_bytes: typeof job.total_bytes === 'number' ? job.total_bytes : 100,
-        transferred_bytes: typeof job.transferred_bytes === 'number' ? job.transferred_bytes : 35,
-        total_entries: typeof job.total_entries === 'number' ? job.total_entries : (job.paths?.length ?? 1),
-        completed_entries: typeof job.completed_entries === 'number' ? job.completed_entries : 0,
+        status: job.status === "queued" ? "queued" : "running",
+        total_bytes:
+          typeof job.total_bytes === "number" ? job.total_bytes : 100,
+        transferred_bytes:
+          typeof job.transferred_bytes === "number"
+            ? job.transferred_bytes
+            : 35,
+        total_entries:
+          typeof job.total_entries === "number"
+            ? job.total_entries
+            : (job.paths?.length ?? 1),
+        completed_entries:
+          typeof job.completed_entries === "number" ? job.completed_entries : 0,
         error: null,
-        created_at: typeof job.created_at === 'number' ? job.created_at : now,
-        updated_at: typeof job.updated_at === 'number' ? job.updated_at : now,
+        created_at: typeof job.created_at === "number" ? job.created_at : now,
+        updated_at: typeof job.updated_at === "number" ? job.updated_at : now,
         finished_at: null,
       }));
   } catch {
@@ -102,12 +133,19 @@ function demoTransferJobsFromLocalStorage(): TransferJob[] {
 }
 
 function FileBrowser() {
-  const { root } = useParams({ from: '/r/$root/$' });
+  const { root } = useParams({ from: "/r/$root/$" });
   const params = Route.useParams();
-  const path = params._splat || '';
+  const path = params._splat || "";
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { viewMode, sidebarOpen, sidebarWidth, selectedPaths, setSidebarWidth, setViewMode } = useViewStore();
+  const {
+    viewMode,
+    sidebarOpen,
+    sidebarWidth,
+    selectedPaths,
+    setSidebarWidth,
+    setViewMode,
+  } = useViewStore();
   const uploadZoneRef = useRef<UploadZoneHandle>(null);
   const listingScrollRef = useRef<HTMLDivElement>(null);
   const errorIdRef = useRef(0);
@@ -119,8 +157,14 @@ function FileBrowser() {
   const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showShare, setShowShare] = useState(false);
-  const [shareTarget, setShareTarget] = useState<{ path: string; is_dir: boolean } | null>(null);
-  const [previewTarget, setPreviewTarget] = useState<{ entry: FileEntry; parentPath: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<{
+    path: string;
+    is_dir: boolean;
+  } | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<{
+    entry: FileEntry;
+    parentPath: string;
+  } | null>(null);
   const [dropTargetActive, setDropTargetActive] = useState(false);
   const [columnDisplayPath, setColumnDisplayPath] = useState(path);
   const [columnActiveFolderPath, setColumnActiveFolderPath] = useState(path);
@@ -131,10 +175,15 @@ function FileBrowser() {
     destRoot: string;
     dest: string;
   } | null>(null);
-  const [blockingError, setBlockingError] = useState<ErrorNoticeData | null>(null);
+  const [blockingError, setBlockingError] = useState<ErrorNoticeData | null>(
+    null,
+  );
   const [errorToasts, setErrorToasts] = useState<ErrorNoticeData[]>([]);
   const [deleteJobs, setDeleteJobs] = useState<DeleteJobNotice[]>([]);
-  const resetCurrentDropTarget = useCallback(() => setDropTargetActive(false), []);
+  const resetCurrentDropTarget = useCallback(
+    () => setDropTargetActive(false),
+    [],
+  );
 
   // Context menu
   const [contextMenu, setContextMenu] = useState<{
@@ -145,7 +194,7 @@ function FileBrowser() {
   } | null>(null);
 
   const { data: user } = useQuery({
-    queryKey: ['me'],
+    queryKey: ["me"],
     queryFn: api.me,
     retry: false,
     staleTime: 5 * 60 * 1000,
@@ -153,8 +202,12 @@ function FileBrowser() {
 
   useGlobalDragCleanup(resetCurrentDropTarget);
 
-  const { data: listing, isLoading, error } = useQuery({
-    queryKey: ['listing', root, path],
+  const {
+    data: listing,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["listing", root, path],
     queryFn: () => api.listDirectory(root, path),
     staleTime: 10_000,
     refetchInterval: 20_000,
@@ -162,14 +215,14 @@ function FileBrowser() {
   });
 
   const { data: transferJobData } = useQuery({
-    queryKey: ['transfer-jobs'],
+    queryKey: ["transfer-jobs"],
     queryFn: api.transferJobs,
     enabled: Boolean(user),
     refetchInterval: user ? 1000 : false,
     staleTime: 1000,
   });
 
-  const currentRoot = user?.roots.find(r => r.key === root);
+  const currentRoot = user?.roots.find((r) => r.key === root);
   const caps = currentRoot?.caps || { read: true, write: false, share: false };
   const serverCapabilities = user?.capabilities ?? {
     archive_extraction: true,
@@ -177,38 +230,56 @@ function FileBrowser() {
     media_preview_transcoding: true,
     media_metadata_probe: true,
   };
-  const demoTransferJobs = useMemo(() => demoTransferJobsFromLocalStorage(), []);
+  const demoTransferJobs = useMemo(
+    () => demoTransferJobsFromLocalStorage(),
+    [],
+  );
   const activeTransferJobs = [
     ...(transferJobData?.jobs ?? []).filter(isActiveTransferJob),
     ...demoTransferJobs,
   ];
-  const currentFolderTransferJobs = transferJobsForTarget(activeTransferJobs, root, path);
+  const currentFolderTransferJobs = transferJobsForTarget(
+    activeTransferJobs,
+    root,
+    path,
+  );
   const isDemoCurrentFolderDropTarget = isDemoDropTarget(root, path);
-  const breadcrumbPath = viewMode === 'columns' ? columnDisplayPath : path;
+  const breadcrumbPath = viewMode === "columns" ? columnDisplayPath : path;
 
-  const makeErrorNotice = useCallback((title: string, err: unknown): ErrorNoticeData => {
-    const id = errorIdRef.current + 1;
-    errorIdRef.current = id;
-    const message = formatApiError(err);
-    return {
-      id,
-      title,
-      message,
-      details: formatApiErrorDetails(err),
-    };
-  }, []);
+  const makeErrorNotice = useCallback(
+    (title: string, err: unknown): ErrorNoticeData => {
+      const id = errorIdRef.current + 1;
+      errorIdRef.current = id;
+      const message = formatApiError(err);
+      return {
+        id,
+        title,
+        message,
+        details: formatApiErrorDetails(err),
+      };
+    },
+    [],
+  );
 
-  const showErrorDialog = useCallback((title: string, err: unknown) => {
-    setBlockingError(makeErrorNotice(title, err));
-  }, [makeErrorNotice]);
+  const showErrorDialog = useCallback(
+    (title: string, err: unknown) => {
+      setBlockingError(makeErrorNotice(title, err));
+    },
+    [makeErrorNotice],
+  );
 
-  const showErrorToast = useCallback((title: string, err: unknown) => {
-    const notice = makeErrorNotice(title, err);
-    setErrorToasts((current) => [...current, notice].slice(-4));
-    window.setTimeout(() => {
-      setErrorToasts((current) => current.filter((toast) => toast.id !== notice.id));
-    }, 7000);
-  }, [makeErrorNotice]);
+  const showErrorToast = useCallback(
+    (title: string, err: unknown) => {
+      const notice = makeErrorNotice(title, err);
+      setErrorToasts((current) => [...current, notice].slice(-4));
+      window.setTimeout(() => {
+        setErrorToasts((current) =>
+          current.filter((toast) => toast.id !== notice.id),
+        );
+      }, 7000);
+    },
+    [makeErrorNotice],
+  );
 
   useEffect(() => {
     setColumnDisplayPath(path);
@@ -222,22 +293,25 @@ function FileBrowser() {
   }, [path, root]);
 
   const refreshListing = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['listing', root, path] });
-    queryClient.invalidateQueries({ queryKey: ['tree', root] });
+    queryClient.invalidateQueries({ queryKey: ["listing", root, path] });
+    queryClient.invalidateQueries({ queryKey: ["tree", root] });
   }, [queryClient, root, path]);
 
-  const togglePreviewAtPath = useCallback((entry: FileEntry, parentPath: string) => {
-    setPreviewTarget((current) => {
-      if (
-        current &&
-        current.parentPath === parentPath &&
-        current.entry.name === entry.name
-      ) {
-        return null;
-      }
-      return { entry, parentPath };
-    });
-  }, []);
+  const togglePreviewAtPath = useCallback(
+    (entry: FileEntry, parentPath: string) => {
+      setPreviewTarget((current) => {
+        if (
+          current &&
+          current.parentPath === parentPath &&
+          current.entry.name === entry.name
+        ) {
+          return null;
+        }
+        return { entry, parentPath };
+      });
+    },
+    [],
+  );
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -245,26 +319,31 @@ function FileBrowser() {
       if (isEditableShortcutTarget(e.target)) return;
       if (previewTarget) return; // PreviewPane handles its own keys
 
-      if ((e.key === ' ' || e.key === 'Space' || e.key === 'Spacebar') && !e.repeat) {
+      if (
+        (e.key === " " || e.key === "Space" || e.key === "Spacebar") &&
+        !e.repeat
+      ) {
         e.preventDefault();
         // Open preview for the first selected file
         const { selectedPaths } = useViewStore.getState();
         if (selectedPaths.size === 1 && listing?.entries) {
           const selectedPath = [...selectedPaths][0];
-          const name = selectedPath.split('/').pop();
-          const entry = listing.entries.find((f) => f.name === name && !f.is_dir);
+          const name = selectedPath.split("/").pop();
+          const entry = listing.entries.find(
+            (f) => f.name === name && !f.is_dir,
+          );
           if (entry) togglePreviewAtPath(entry, path);
         }
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      } else if (e.key === "Delete" || e.key === "Backspace") {
         const { selectedPaths } = useViewStore.getState();
         if (selectedPaths.size > 0) {
           setShowDeleteConfirm(true);
         }
-      } else if (e.key === 'F2') {
+      } else if (e.key === "F2") {
         const { selectedPaths } = useViewStore.getState();
         if (selectedPaths.size === 1 && listing?.entries) {
           const selectedPath = [...selectedPaths][0];
-          const name = selectedPath.split('/').pop();
+          const name = selectedPath.split("/").pop();
           const entry = listing.entries.find((f) => f.name === name);
           if (entry) {
             setRenameTarget(entry);
@@ -273,15 +352,15 @@ function FileBrowser() {
         }
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, [listing, path, previewTarget, togglePreviewAtPath]);
 
   const navigateTo = (entry: FileEntry) => {
     const newPath = path ? `${path}/${entry.name}` : entry.name;
     if (entry.is_dir) {
       navigate({
-        to: '/r/$root/$',
+        to: "/r/$root/$",
         params: { root, _splat: newPath },
       });
     } else {
@@ -293,7 +372,7 @@ function FileBrowser() {
     const newPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
     if (entry.is_dir) {
       navigate({
-        to: '/r/$root/$',
+        to: "/r/$root/$",
         params: { root, _splat: newPath },
       });
     } else {
@@ -301,49 +380,74 @@ function FileBrowser() {
     }
   };
 
-  const navigateToPath = useCallback((targetPath: string) => {
-    navigate({
-      to: '/r/$root/$',
-      params: { root, _splat: targetPath },
-    });
-  }, [navigate, root]);
+  const navigateToPath = useCallback(
+    (targetPath: string) => {
+      navigate({
+        to: "/r/$root/$",
+        params: { root, _splat: targetPath },
+      });
+    },
+    [navigate, root],
+  );
 
-  const navigateToRoot = useCallback((targetRoot: string) => {
-    navigate({
-      to: '/r/$root/$',
-      params: { root: targetRoot, _splat: '' },
-    });
-  }, [navigate]);
+  const navigateToRoot = useCallback(
+    (targetRoot: string) => {
+      navigate({
+        to: "/r/$root/$",
+        params: { root: targetRoot, _splat: "" },
+      });
+    },
+    [navigate],
+  );
 
   const handleColumnDisplayPathChange = useCallback((displayPath: string) => {
     setColumnDisplayPath(displayPath);
   }, []);
 
-  const handleColumnActiveFolderPathChange = useCallback((activeFolderPath: string) => {
-    setColumnActiveFolderPath(activeFolderPath);
-  }, []);
+  const handleColumnActiveFolderPathChange = useCallback(
+    (activeFolderPath: string) => {
+      setColumnActiveFolderPath(activeFolderPath);
+    },
+    [],
+  );
 
-  const switchViewMode = useCallback((mode: 'grid' | 'list' | 'columns') => {
-    if (viewMode === 'columns' && mode !== 'columns' && columnActiveFolderPath !== path) {
-      navigateToPath(columnActiveFolderPath);
-    }
-    setViewMode(mode);
-  }, [columnActiveFolderPath, navigateToPath, path, setViewMode, viewMode]);
+  const switchViewMode = useCallback(
+    (mode: "grid" | "list" | "columns") => {
+      if (
+        viewMode === "columns" &&
+        mode !== "columns" &&
+        columnActiveFolderPath !== path
+      ) {
+        navigateToPath(columnActiveFolderPath);
+      }
+      setViewMode(mode);
+    },
+    [columnActiveFolderPath, navigateToPath, path, setViewMode, viewMode],
+  );
 
-  const startSidebarResize = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = sidebarWidth;
-    const onMove = (event: PointerEvent) => {
-      setSidebarWidth(clamp(startWidth + event.clientX - startX, SIDEBAR_WIDTH.min, SIDEBAR_WIDTH.max));
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  }, [setSidebarWidth, sidebarWidth]);
+  const startSidebarResize = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = sidebarWidth;
+      const onMove = (event: PointerEvent) => {
+        setSidebarWidth(
+          clamp(
+            startWidth + event.clientX - startX,
+            SIDEBAR_WIDTH.min,
+            SIDEBAR_WIDTH.max,
+          ),
+        );
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [setSidebarWidth, sidebarWidth],
+  );
 
   // ---- Write operation handlers ----
 
@@ -353,7 +457,7 @@ function FileBrowser() {
       setShowCreateFolder(false);
       refreshListing();
     } catch (err) {
-      showErrorDialog('Failed to create folder', err);
+      showErrorDialog("Failed to create folder", err);
     }
   };
 
@@ -366,7 +470,7 @@ function FileBrowser() {
       setRenameTarget(null);
       refreshListing();
     } catch (err) {
-      showErrorDialog('Failed to rename', err);
+      showErrorDialog("Failed to rename", err);
     }
   };
 
@@ -386,62 +490,77 @@ function FileBrowser() {
 
     try {
       await api.deleteEntries(root, paths);
-      queryClient.invalidateQueries({ queryKey: ['listing', root] });
-      queryClient.invalidateQueries({ queryKey: ['tree', root] });
-      queryClient.invalidateQueries({ queryKey: ['roots'] });
+      queryClient.invalidateQueries({ queryKey: ["listing", root] });
+      queryClient.invalidateQueries({ queryKey: ["tree", root] });
+      queryClient.invalidateQueries({ queryKey: ["roots"] });
     } catch (err) {
-      queryClient.invalidateQueries({ queryKey: ['listing', root] });
-      queryClient.invalidateQueries({ queryKey: ['tree', root] });
-      showErrorDialog('Failed to delete', err);
+      queryClient.invalidateQueries({ queryKey: ["listing", root] });
+      queryClient.invalidateQueries({ queryKey: ["tree", root] });
+      showErrorDialog("Failed to delete", err);
     } finally {
       setDeleteJobs((current) => current.filter((job) => job.id !== notice.id));
     }
   };
 
-  const executeTransfer = useCallback(async (
-    sourceRoot: string,
-    paths: string[],
-    destRoot: string,
-    dest: string,
-    operation: 'move' | 'copy',
-  ) => {
-    try {
-      await api.transferEntries(sourceRoot, paths, destRoot, dest, operation);
-      useViewStore.getState().clearSelection();
-    } catch (err) {
-      showErrorDialog(`Failed to ${operation}`, err);
-    }
-  }, [showErrorDialog]);
+  const executeTransfer = useCallback(
+    async (
+      sourceRoot: string,
+      paths: string[],
+      destRoot: string,
+      dest: string,
+      operation: "move" | "copy",
+    ) => {
+      try {
+        await api.transferEntries(sourceRoot, paths, destRoot, dest, operation);
+        useViewStore.getState().clearSelection();
+      } catch (err) {
+        showErrorDialog(`Failed to ${operation}`, err);
+      }
+    },
+    [showErrorDialog],
+  );
 
-  const handleFileDrop = useCallback((targetRoot: string, targetPath: string, e: React.DragEvent) => {
-    resetCurrentDropTarget();
+  const handleFileDrop = useCallback(
+    (targetRoot: string, targetPath: string, e: React.DragEvent) => {
+      resetCurrentDropTarget();
 
-    const payload = getFileDragPayload(e.dataTransfer);
-    if (!payload || payload.paths.length === 0) return;
+      const payload = getFileDragPayload(e.dataTransfer);
+      if (!payload || payload.paths.length === 0) return;
 
-    const targetRootInfo = user?.roots.find((r) => r.key === targetRoot);
-    if (!targetRootInfo?.caps.write) {
-      showErrorToast('Drop blocked', 'You do not have permission to write to that share.');
-      return;
-    }
+      const targetRootInfo = user?.roots.find((r) => r.key === targetRoot);
+      if (!targetRootInfo?.caps.write) {
+        showErrorToast(
+          "Drop blocked",
+          "You do not have permission to write to that share.",
+        );
+        return;
+      }
 
-    if (isSelfOrDescendantDrop(payload, targetRoot, targetPath)) {
-      showErrorToast('Drop blocked', 'Cannot move a folder into itself.');
-      return;
-    }
+      if (isSelfOrDescendantDrop(payload, targetRoot, targetPath)) {
+        showErrorToast("Drop blocked", "Cannot move a folder into itself.");
+        return;
+      }
 
-    if (payload.root === targetRoot) {
-      void executeTransfer(payload.root, payload.paths, targetRoot, targetPath, 'move');
-      return;
-    }
+      if (payload.root === targetRoot) {
+        void executeTransfer(
+          payload.root,
+          payload.paths,
+          targetRoot,
+          targetPath,
+          "move",
+        );
+        return;
+      }
 
-    setPendingTransfer({
-      sourceRoot: payload.root,
-      paths: payload.paths,
-      destRoot: targetRoot,
-      dest: targetPath,
-    });
-  }, [executeTransfer, resetCurrentDropTarget, showErrorToast, user?.roots]);
+      setPendingTransfer({
+        sourceRoot: payload.root,
+        paths: payload.paths,
+        destRoot: targetRoot,
+        dest: targetPath,
+      });
+    },
+    [executeTransfer, resetCurrentDropTarget, showErrorToast, user?.roots],
+  );
 
   const handleContextMenu = (e: React.MouseEvent, entry: FileEntry) => {
     e.preventDefault();
@@ -451,7 +570,11 @@ function FileBrowser() {
     setContextMenu({ x: e.clientX, y: e.clientY, entry, parentPath: path });
   };
 
-  const handleContextMenuAtPath = (e: React.MouseEvent, entry: FileEntry, parentPath: string) => {
+  const handleContextMenuAtPath = (
+    e: React.MouseEvent,
+    entry: FileEntry,
+    parentPath: string,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
     const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
@@ -465,60 +588,79 @@ function FileBrowser() {
       useViewStore.getState().clearSelection();
       refreshListing();
     } catch (err) {
-      showErrorDialog('Extraction failed', err);
+      showErrorDialog("Extraction failed", err);
     }
   };
 
-  const getContextMenuItems = (entry: FileEntry, parentPath: string): ContextMenuItem[] => {
+  const getContextMenuItems = (
+    entry: FileEntry,
+    parentPath: string,
+  ): ContextMenuItem[] => {
     const entryPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
     const items: ContextMenuItem[] = [];
 
     if (entry.is_dir) {
       items.push({
-        label: 'Open',
-        iconName: 'folderOpen',
+        label: "Open",
+        iconName: "folderOpen",
         onClick: () => navigateTo(entry),
       });
       items.push({
-        label: 'Download as ZIP',
-        iconName: 'download',
+        label: "Download as ZIP",
+        iconName: "download",
         onClick: () => {
-          api.downloadZip(root, [entryPath]).catch((err) => showErrorDialog('ZIP download failed', err));
+          api
+            .downloadZip(root, [entryPath])
+            .catch((err) => showErrorDialog("ZIP download failed", err));
         },
       });
     } else {
       items.push({
-        label: 'Download',
-        iconName: 'download',
-        onClick: () => window.open(api.downloadUrl(root, entryPath), '_blank'),
+        label: "Download",
+        iconName: "download",
+        onClick: () => window.open(api.downloadUrl(root, entryPath), "_blank"),
       });
     }
 
-    if (!entry.is_dir && caps.write && serverCapabilities.archive_extraction && isExtractableArchive(entry.name)) {
+    if (
+      !entry.is_dir &&
+      caps.write &&
+      serverCapabilities.archive_extraction &&
+      isExtractableArchive(entry.name)
+    ) {
       items.push({
-        label: '', iconName: 'file', onClick: () => {}, separator: true,
+        label: "",
+        iconName: "file",
+        onClick: () => {},
+        separator: true,
       });
       items.push({
-        label: 'Extract here',
-        iconName: 'archive',
-        onClick: () => { void handleExtractArchive(entryPath, 'here'); },
+        label: "Extract here",
+        iconName: "archive",
+        onClick: () => {
+          void handleExtractArchive(entryPath, "here");
+        },
       });
       items.push({
-        label: 'Extract into Subfolder',
-        iconName: 'folder',
-        onClick: () => { void handleExtractArchive(entryPath, 'subfolder'); },
+        label: "Extract into Subfolder",
+        iconName: "folder",
+        onClick: () => {
+          void handleExtractArchive(entryPath, "subfolder");
+        },
       });
       items.push({
-        label: 'Extract and Remove Archive',
-        iconName: 'archive',
-        onClick: () => { void handleExtractArchive(entryPath, 'here_remove'); },
+        label: "Extract and Remove Archive",
+        iconName: "archive",
+        onClick: () => {
+          void handleExtractArchive(entryPath, "here_remove");
+        },
       });
     }
 
     if (caps.write) {
       items.push({
-        label: 'Rename',
-        iconName: 'fileText',
+        label: "Rename",
+        iconName: "fileText",
         onClick: () => {
           setRenameTarget(entry);
           setShowRename(true);
@@ -529,8 +671,8 @@ function FileBrowser() {
 
     if (caps.share) {
       items.push({
-        label: 'Share',
-        iconName: 'share2',
+        label: "Share",
+        iconName: "share2",
         onClick: () => {
           setShareTarget({ path: entryPath, is_dir: entry.is_dir });
           setShowShare(true);
@@ -540,12 +682,15 @@ function FileBrowser() {
 
     if (caps.write) {
       items.push({
-        label: '', iconName: 'file', onClick: () => {}, separator: true,
+        label: "",
+        iconName: "file",
+        onClick: () => {},
+        separator: true,
       });
 
       items.push({
-        label: 'Delete',
-        iconName: 'alertTriangle',
+        label: "Delete",
+        iconName: "alertTriangle",
         onClick: () => {
           useViewStore.getState().select(entryPath);
           setShowDeleteConfirm(true);
@@ -558,43 +703,53 @@ function FileBrowser() {
   };
 
   // Keyboard shortcuts
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (isEditableShortcutTarget(e.target)) return;
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (isEditableShortcutTarget(e.target)) return;
 
-    const selected = useViewStore.getState().selectedPaths;
+      const selected = useViewStore.getState().selectedPaths;
 
-    // Delete key
-    if ((e.key === 'Delete' || e.key === 'Backspace') && caps.write) {
-      if (selected.size > 0) {
+      // Delete key
+      if ((e.key === "Delete" || e.key === "Backspace") && caps.write) {
+        if (selected.size > 0) {
+          e.preventDefault();
+          setShowDeleteConfirm(true);
+        }
+      }
+
+      // F2 for rename
+      if (e.key === "F2" && selected.size === 1 && caps.write) {
         e.preventDefault();
-        setShowDeleteConfirm(true);
+        const selectedPath = Array.from(selected)[0];
+        const entry = listing?.entries.find((en) => {
+          const entryPath = path ? `${path}/${en.name}` : en.name;
+          return entryPath === selectedPath;
+        });
+        if (entry) {
+          setRenameTarget(entry);
+          setShowRename(true);
+        }
       }
-    }
-
-    // F2 for rename
-    if (e.key === 'F2' && selected.size === 1 && caps.write) {
-      e.preventDefault();
-      const selectedPath = Array.from(selected)[0];
-      const entry = listing?.entries.find((en) => {
-        const entryPath = path ? `${path}/${en.name}` : en.name;
-        return entryPath === selectedPath;
-      });
-      if (entry) {
-        setRenameTarget(entry);
-        setShowRename(true);
-      }
-    }
-  }, [caps.write, listing, path]);
+    },
+    [caps.write, listing, path],
+  );
 
   const selectedItems = Array.from(selectedPaths);
   const selectedCount = selectedItems.length;
   const previewEntries = useMemo(() => {
     if (!previewTarget) return [];
     if (previewTarget.parentPath === path) return listing?.entries ?? [];
-    return queryClient.getQueryData<DirectoryListing>(['listing', root, previewTarget.parentPath])?.entries ?? [];
+    return (
+      queryClient.getQueryData<DirectoryListing>([
+        "listing",
+        root,
+        previewTarget.parentPath,
+      ])?.entries ?? []
+    );
   }, [listing?.entries, path, previewTarget, queryClient, root]);
   const selectedDetails: FileDetailsSelection | null = useMemo(() => {
-    if (viewMode === 'columns' || selectedPaths.size !== 1 || !listing) return null;
+    if (viewMode === "columns" || selectedPaths.size !== 1 || !listing)
+      return null;
     const selectedPath = Array.from(selectedPaths)[0];
     const entry = listing.entries.find((candidate) => {
       const candidatePath = path ? `${path}/${candidate.name}` : candidate.name;
@@ -603,40 +758,47 @@ function FileBrowser() {
     return entry ? { entry, parentPath: path, path: selectedPath } : null;
   }, [listing, path, selectedPaths, viewMode]);
   const hasReadme = Boolean(listing?.entries.some(isReadmeEntry));
-  const readmeShown = viewMode !== 'columns' && hasReadme && !readmeHidden;
-  const canShowReadme = viewMode !== 'columns' && hasReadme && !readmeShown;
+  const readmeShown = viewMode !== "columns" && hasReadme && !readmeHidden;
+  const canShowReadme = viewMode !== "columns" && hasReadme && !readmeShown;
   const deletePreviewItems = selectedItems.slice(0, 5).map((selectedPath) => {
-    const name = selectedPath.split('/').filter(Boolean).pop();
+    const name = selectedPath.split("/").filter(Boolean).pop();
     return { path: selectedPath, name: name || selectedPath };
   });
-  const hiddenDeleteCount = Math.max(0, selectedCount - deletePreviewItems.length);
+  const hiddenDeleteCount = Math.max(
+    0,
+    selectedCount - deletePreviewItems.length,
+  );
 
   return (
     <div
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        background: 'var(--color-bg)',
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        background: "var(--color-bg)",
       }}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
     >
       <TopBar user={user || null} />
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div
+        style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}
+      >
         {/* Sidebar */}
-        {sidebarOpen && viewMode !== 'columns' && (
-          <aside style={{
-            position: 'relative',
-            width: sidebarWidth,
-            minWidth: sidebarWidth,
-            borderRight: '1px solid var(--color-border)',
-            background: 'var(--color-sidebar-bg)',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            padding: 'var(--space-2) 0',
-          }}>
+        {sidebarOpen && viewMode !== "columns" && (
+          <aside
+            style={{
+              position: "relative",
+              width: sidebarWidth,
+              minWidth: sidebarWidth,
+              borderRight: "1px solid var(--color-border)",
+              background: "var(--color-sidebar-bg)",
+              overflowY: "auto",
+              overflowX: "hidden",
+              padding: "var(--space-2) 0",
+            }}
+          >
             {user && (
               <FolderTree
                 roots={user.roots}
@@ -647,7 +809,7 @@ function FileBrowser() {
                 customLinks={user.custom_links}
                 onNavigate={(rootKey, folderPath) => {
                   navigate({
-                    to: '/r/$root/$',
+                    to: "/r/$root/$",
                     params: { root: rootKey, _splat: folderPath },
                   });
                 }}
@@ -658,12 +820,12 @@ function FileBrowser() {
               aria-orientation="vertical"
               onPointerDown={startSidebarResize}
               style={{
-                position: 'absolute',
+                position: "absolute",
                 top: 0,
                 right: 0,
                 bottom: 0,
                 width: 6,
-                cursor: 'col-resize',
+                cursor: "col-resize",
                 zIndex: 3,
               }}
             />
@@ -671,20 +833,38 @@ function FileBrowser() {
         )}
 
         {/* Main content */}
-        <UploadZone ref={uploadZoneRef} root={root} path={path} onUploadComplete={refreshListing} canUpload={caps.write}>
-          <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <UploadZone
+          ref={uploadZoneRef}
+          root={root}
+          path={path}
+          onUploadComplete={refreshListing}
+          canUpload={caps.write}
+        >
+          <main
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
             {/* Toolbar */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-              padding: 'var(--space-2) var(--space-4)',
-              borderBottom: '1px solid var(--color-border)',
-              background: 'var(--color-bg)',
-            }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                padding: "var(--space-2) var(--space-4)",
+                borderBottom: "1px solid var(--color-border)",
+                background: "var(--color-bg)",
+              }}
+            >
               <Breadcrumb
                 root={root}
-                rootDisplayName={user?.roots.find(r => r.key === root)?.display_name || root}
+                rootDisplayName={
+                  user?.roots.find((r) => r.key === root)?.display_name || root
+                }
                 path={breadcrumbPath}
                 onNavigate={navigateToPath}
               />
@@ -698,26 +878,27 @@ function FileBrowser() {
                     onClick={() => uploadZoneRef.current?.trigger()}
                     title="Upload files"
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-1)',
-                      padding: 'var(--space-1) var(--space-2)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'transparent',
-                      color: 'var(--color-fg-muted)',
-                      cursor: 'pointer',
-                      fontSize: 'var(--text-xs)',
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--space-1)",
+                      padding: "var(--space-1) var(--space-2)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      background: "transparent",
+                      color: "var(--color-fg-muted)",
+                      cursor: "pointer",
+                      fontSize: "var(--text-xs)",
                       fontWeight: 500,
-                      transition: 'all var(--duration-fast) var(--ease-out)',
+                      transition: "all var(--duration-fast) var(--ease-out)",
                     }}
                     onMouseOver={(e) => {
-                      e.currentTarget.style.background = 'var(--color-bg-muted)';
-                      e.currentTarget.style.color = 'var(--color-fg)';
+                      e.currentTarget.style.background =
+                        "var(--color-bg-muted)";
+                      e.currentTarget.style.color = "var(--color-fg)";
                     }}
                     onMouseOut={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = 'var(--color-fg-muted)';
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = "var(--color-fg-muted)";
                     }}
                   >
                     <Icon name="upload" size={14} />
@@ -728,26 +909,27 @@ function FileBrowser() {
                     onClick={() => setShowCreateFolder(true)}
                     title="New folder"
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 'var(--space-1)',
-                      padding: 'var(--space-1) var(--space-2)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'transparent',
-                      color: 'var(--color-fg-muted)',
-                      cursor: 'pointer',
-                      fontSize: 'var(--text-xs)',
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--space-1)",
+                      padding: "var(--space-1) var(--space-2)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      background: "transparent",
+                      color: "var(--color-fg-muted)",
+                      cursor: "pointer",
+                      fontSize: "var(--text-xs)",
                       fontWeight: 500,
-                      transition: 'all var(--duration-fast) var(--ease-out)',
+                      transition: "all var(--duration-fast) var(--ease-out)",
                     }}
                     onMouseOver={(e) => {
-                      e.currentTarget.style.background = 'var(--color-bg-muted)';
-                      e.currentTarget.style.color = 'var(--color-fg)';
+                      e.currentTarget.style.background =
+                        "var(--color-bg-muted)";
+                      e.currentTarget.style.color = "var(--color-fg)";
                     }}
                     onMouseOut={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = 'var(--color-fg-muted)';
+                      e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.color = "var(--color-fg-muted)";
                     }}
                   >
                     <Icon name="folder" size={14} />
@@ -765,26 +947,26 @@ function FileBrowser() {
                   }}
                   title="Share this folder"
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-1)',
-                    padding: 'var(--space-1) var(--space-2)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'transparent',
-                    color: 'var(--color-fg-muted)',
-                    cursor: 'pointer',
-                    fontSize: 'var(--text-xs)',
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--space-1)",
+                    padding: "var(--space-1) var(--space-2)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-md)",
+                    background: "transparent",
+                    color: "var(--color-fg-muted)",
+                    cursor: "pointer",
+                    fontSize: "var(--text-xs)",
                     fontWeight: 500,
-                    transition: 'all var(--duration-fast) var(--ease-out)',
+                    transition: "all var(--duration-fast) var(--ease-out)",
                   }}
                   onMouseOver={(e) => {
-                    e.currentTarget.style.background = 'var(--color-bg-muted)';
-                    e.currentTarget.style.color = 'var(--color-fg)';
+                    e.currentTarget.style.background = "var(--color-bg-muted)";
+                    e.currentTarget.style.color = "var(--color-fg)";
                   }}
                   onMouseOut={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.color = 'var(--color-fg-muted)';
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "var(--color-fg-muted)";
                   }}
                 >
                   <Icon name="share2" size={14} />
@@ -798,26 +980,27 @@ function FileBrowser() {
                   onClick={() => setShowDeleteConfirm(true)}
                   title={`Delete ${selectedCount} item(s)`}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--space-1)',
-                    padding: 'var(--space-1) var(--space-2)',
-                    border: '1px solid var(--color-border)',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'transparent',
-                    color: 'var(--color-fg-muted)',
-                    cursor: 'pointer',
-                    fontSize: 'var(--text-xs)',
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--space-1)",
+                    padding: "var(--space-1) var(--space-2)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-md)",
+                    background: "transparent",
+                    color: "var(--color-fg-muted)",
+                    cursor: "pointer",
+                    fontSize: "var(--text-xs)",
                     fontWeight: 500,
-                    transition: 'border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out)',
+                    transition:
+                      "border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out)",
                   }}
                   onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--color-danger)';
-                    e.currentTarget.style.color = 'var(--color-danger)';
+                    e.currentTarget.style.borderColor = "var(--color-danger)";
+                    e.currentTarget.style.color = "var(--color-danger)";
                   }}
                   onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--color-border)';
-                    e.currentTarget.style.color = 'var(--color-fg-muted)';
+                    e.currentTarget.style.borderColor = "var(--color-border)";
+                    e.currentTarget.style.color = "var(--color-fg-muted)";
                   }}
                 >
                   <Icon name="alertTriangle" size={14} />
@@ -826,63 +1009,90 @@ function FileBrowser() {
               )}
 
               {/* Separator */}
-              <div style={{ width: 1, height: 20, background: 'var(--color-border)', margin: '0 var(--space-1)' }} />
+              <div
+                style={{
+                  width: 1,
+                  height: 20,
+                  background: "var(--color-border)",
+                  margin: "0 var(--space-1)",
+                }}
+              />
 
               {/* View mode toggle */}
-              <div style={{
-                display: 'flex',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border)',
-                overflow: 'hidden',
-              }}>
+              <div
+                style={{
+                  display: "flex",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border)",
+                  overflow: "hidden",
+                }}
+              >
                 <button
-                  onClick={() => switchViewMode('grid')}
+                  onClick={() => switchViewMode("grid")}
                   style={{
-                    padding: 'var(--space-1) var(--space-2)',
-                    background: viewMode === 'grid' ? 'var(--color-accent-muted)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: viewMode === 'grid' ? 'var(--color-accent)' : 'var(--color-fg-muted)',
-                    fontSize: 'var(--text-sm)',
-                    transition: 'all var(--duration-fast) var(--ease-out)',
-                    display: 'flex',
-                    alignItems: 'center',
+                    padding: "var(--space-1) var(--space-2)",
+                    background:
+                      viewMode === "grid"
+                        ? "var(--color-accent-muted)"
+                        : "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color:
+                      viewMode === "grid"
+                        ? "var(--color-accent)"
+                        : "var(--color-fg-muted)",
+                    fontSize: "var(--text-sm)",
+                    transition: "all var(--duration-fast) var(--ease-out)",
+                    display: "flex",
+                    alignItems: "center",
                   }}
                   title="Grid view"
                 >
                   <Icon name="grid" size={16} />
                 </button>
                 <button
-                  onClick={() => switchViewMode('list')}
+                  onClick={() => switchViewMode("list")}
                   style={{
-                    padding: 'var(--space-1) var(--space-2)',
-                    background: viewMode === 'list' ? 'var(--color-accent-muted)' : 'transparent',
-                    border: 'none',
-                    borderLeft: '1px solid var(--color-border)',
-                    cursor: 'pointer',
-                    color: viewMode === 'list' ? 'var(--color-accent)' : 'var(--color-fg-muted)',
-                    fontSize: 'var(--text-sm)',
-                    transition: 'all var(--duration-fast) var(--ease-out)',
-                    display: 'flex',
-                    alignItems: 'center',
+                    padding: "var(--space-1) var(--space-2)",
+                    background:
+                      viewMode === "list"
+                        ? "var(--color-accent-muted)"
+                        : "transparent",
+                    border: "none",
+                    borderLeft: "1px solid var(--color-border)",
+                    cursor: "pointer",
+                    color:
+                      viewMode === "list"
+                        ? "var(--color-accent)"
+                        : "var(--color-fg-muted)",
+                    fontSize: "var(--text-sm)",
+                    transition: "all var(--duration-fast) var(--ease-out)",
+                    display: "flex",
+                    alignItems: "center",
                   }}
                   title="List view"
                 >
                   <Icon name="list" size={16} />
                 </button>
                 <button
-                  onClick={() => switchViewMode('columns')}
+                  onClick={() => switchViewMode("columns")}
                   style={{
-                    padding: 'var(--space-1) var(--space-2)',
-                    background: viewMode === 'columns' ? 'var(--color-accent-muted)' : 'transparent',
-                    border: 'none',
-                    borderLeft: '1px solid var(--color-border)',
-                    cursor: 'pointer',
-                    color: viewMode === 'columns' ? 'var(--color-accent)' : 'var(--color-fg-muted)',
-                    fontSize: 'var(--text-sm)',
-                    transition: 'all var(--duration-fast) var(--ease-out)',
-                    display: 'flex',
-                    alignItems: 'center',
+                    padding: "var(--space-1) var(--space-2)",
+                    background:
+                      viewMode === "columns"
+                        ? "var(--color-accent-muted)"
+                        : "transparent",
+                    border: "none",
+                    borderLeft: "1px solid var(--color-border)",
+                    cursor: "pointer",
+                    color:
+                      viewMode === "columns"
+                        ? "var(--color-accent)"
+                        : "var(--color-fg-muted)",
+                    fontSize: "var(--text-sm)",
+                    transition: "all var(--duration-fast) var(--ease-out)",
+                    display: "flex",
+                    alignItems: "center",
                   }}
                   title="Column view"
                 >
@@ -892,19 +1102,29 @@ function FileBrowser() {
             </div>
 
             {/* File listing */}
-            <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+            <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
               <div
                 ref={listingScrollRef}
                 style={{
-                  height: '100%',
+                  height: "100%",
                   minHeight: 0,
-                  overflow: viewMode === 'columns' ? 'hidden' : 'auto',
-                  padding: viewMode === 'columns' ? 0 : 'var(--space-4)',
-                  outline: dropTargetActive || isDemoCurrentFolderDropTarget ? '2px dashed var(--color-accent)' : 'none',
+                  overflow: viewMode === "columns" ? "hidden" : "auto",
+                  padding: viewMode === "columns" ? 0 : "var(--space-4)",
+                  outline:
+                    dropTargetActive || isDemoCurrentFolderDropTarget
+                      ? "2px dashed var(--color-accent)"
+                      : "none",
                   outlineOffset: -8,
-                  background: dropTargetActive || isDemoCurrentFolderDropTarget ? 'var(--color-accent-muted)' : 'transparent',
+                  background:
+                    dropTargetActive || isDemoCurrentFolderDropTarget
+                      ? "var(--color-accent-muted)"
+                      : "transparent",
                 }}
-                className={viewMode === 'columns' ? undefined : 'flex flex-col-reverse lg:flex-row gap-6 items-start'}
+                className={
+                  viewMode === "columns"
+                    ? undefined
+                    : "flex flex-col-reverse lg:flex-row gap-6 items-start"
+                }
                 onDragEnter={(e) => {
                   if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
                   e.preventDefault();
@@ -913,10 +1133,11 @@ function FileBrowser() {
                 onDragOver={(e) => {
                   if (!caps.write || !hasNasfilesDrag(e.dataTransfer)) return;
                   e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
+                  e.dataTransfer.dropEffect = "move";
                 }}
                 onDragLeave={(e) => {
-                  if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                  if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                    return;
                   resetCurrentDropTarget();
                 }}
                 onDrop={(e) => {
@@ -928,43 +1149,65 @@ function FileBrowser() {
                 }}
               >
                 <div
-                  className={viewMode === 'columns' ? 'flex-1 min-w-0 w-full flex' : 'flex-1 min-w-0 w-full'}
-                  style={viewMode === 'columns'
-                    ? { minHeight: 0, height: '100%' }
-                    : { minHeight: '100%', display: 'flex', flexDirection: 'column' }}
+                  className={
+                    viewMode === "columns"
+                      ? "flex-1 min-w-0 w-full flex"
+                      : "flex-1 min-w-0 w-full"
+                  }
+                  style={
+                    viewMode === "columns"
+                      ? { minHeight: 0, height: "100%" }
+                      : {
+                          minHeight: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                        }
+                  }
                 >
-                  {viewMode !== 'columns' && isLoading && (
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-                      gap: 'var(--space-4)',
-                    }}>
+                  {viewMode !== "columns" && isLoading && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fill, minmax(160px, 1fr))",
+                        gap: "var(--space-4)",
+                      }}
+                    >
                       {Array.from({ length: 12 }).map((_, i) => (
-                        <div key={i} className="shimmer" style={{
-                          height: 140,
-                          borderRadius: 'var(--radius-lg)',
-                        }} />
+                        <div
+                          key={i}
+                          className="shimmer"
+                          style={{
+                            height: 140,
+                            borderRadius: "var(--radius-lg)",
+                          }}
+                        />
                       ))}
                     </div>
                   )}
 
-                  {viewMode !== 'columns' && error && (
+                  {viewMode !== "columns" && error && (
                     <EmptyState
                       iconName="alertTriangle"
                       title="Failed to load"
-                      description={error instanceof Error ? error.message : 'Unknown error'}
+                      description={
+                        error instanceof Error ? error.message : "Unknown error"
+                      }
                     />
                   )}
 
-                  {viewMode !== 'columns' && listing && listing.entries.length === 0 && currentFolderTransferJobs.length === 0 && (
-                    <EmptyState
-                      iconName="folderOpen"
-                      title="This folder is empty"
-                      description="Drop files here or create a new folder to get started."
-                    />
-                  )}
+                  {viewMode !== "columns" &&
+                    listing &&
+                    listing.entries.length === 0 &&
+                    currentFolderTransferJobs.length === 0 && (
+                      <EmptyState
+                        iconName="folderOpen"
+                        title="This folder is empty"
+                        description="Drop files here or create a new folder to get started."
+                      />
+                    )}
 
-                  {viewMode === 'columns' && user && (
+                  {viewMode === "columns" && user && (
                     <ColumnBrowser
                       roots={user.roots}
                       activeRoot={root}
@@ -981,37 +1224,45 @@ function FileBrowser() {
                       onDropFiles={handleFileDrop}
                       transferJobs={activeTransferJobs}
                       onDisplayPathChange={handleColumnDisplayPathChange}
-                      onActiveFolderPathChange={handleColumnActiveFolderPathChange}
+                      onActiveFolderPathChange={
+                        handleColumnActiveFolderPathChange
+                      }
                     />
                   )}
 
-                  {viewMode === 'grid' && listing && (listing.entries.length > 0 || currentFolderTransferJobs.length > 0) && (
-                    <FileGrid
-                      entries={listing.entries}
-                      onOpen={navigateTo}
-                      root={root}
-                      path={path}
-                      scrollParentRef={listingScrollRef}
-                      onContextMenu={handleContextMenu}
-                      onDropFiles={handleFileDrop}
-                      transferJobs={activeTransferJobs}
-                    />
-                  )}
+                  {viewMode === "grid" &&
+                    listing &&
+                    (listing.entries.length > 0 ||
+                      currentFolderTransferJobs.length > 0) && (
+                      <FileGrid
+                        entries={listing.entries}
+                        onOpen={navigateTo}
+                        root={root}
+                        path={path}
+                        scrollParentRef={listingScrollRef}
+                        onContextMenu={handleContextMenu}
+                        onDropFiles={handleFileDrop}
+                        transferJobs={activeTransferJobs}
+                      />
+                    )}
 
-                  {viewMode === 'list' && listing && (listing.entries.length > 0 || currentFolderTransferJobs.length > 0) && (
-                    <FileList
-                      entries={listing.entries}
-                      onOpen={navigateTo}
-                      root={root}
-                      path={path}
-                      scrollParentRef={listingScrollRef}
-                      onContextMenu={handleContextMenu}
-                      onDropFiles={handleFileDrop}
-                      transferJobs={activeTransferJobs}
-                    />
-                  )}
+                  {viewMode === "list" &&
+                    listing &&
+                    (listing.entries.length > 0 ||
+                      currentFolderTransferJobs.length > 0) && (
+                      <FileList
+                        entries={listing.entries}
+                        onOpen={navigateTo}
+                        root={root}
+                        path={path}
+                        scrollParentRef={listingScrollRef}
+                        onContextMenu={handleContextMenu}
+                        onDropFiles={handleFileDrop}
+                        transferJobs={activeTransferJobs}
+                      />
+                    )}
 
-                  {viewMode !== 'columns' && listing && currentRoot?.usage && (
+                  {viewMode !== "columns" && listing && currentRoot?.usage && (
                     <FreeSpaceFooter
                       availableBytes={currentRoot.usage.available_bytes}
                       canShowReadme={canShowReadme}
@@ -1024,21 +1275,26 @@ function FileBrowser() {
                 </div>
 
                 {readmeShown && listing && (
-                  <DirectoryReadme entries={listing.entries} root={root} path={path} onClose={() => setReadmeHidden(true)} />
+                  <DirectoryReadme
+                    entries={listing.entries}
+                    root={root}
+                    path={path}
+                    onClose={() => setReadmeHidden(true)}
+                  />
                 )}
               </div>
 
-              {viewMode !== 'columns' && selectedDetails && (
+              {viewMode !== "columns" && selectedDetails && (
                 <div
                   style={{
-                    position: 'absolute',
-                    top: 'var(--space-4)',
-                    right: 'var(--space-4)',
-                    bottom: 'var(--space-4)',
-                    width: 'min(400px, calc(100% - var(--space-8)))',
+                    position: "absolute",
+                    top: "var(--space-4)",
+                    right: "var(--space-4)",
+                    bottom: "var(--space-4)",
+                    width: "min(400px, calc(100% - var(--space-8)))",
                     zIndex: 15,
-                    borderRadius: 'var(--radius-lg)',
-                    boxShadow: 'var(--shadow-lg)',
+                    borderRadius: "var(--radius-lg)",
+                    boxShadow: "var(--shadow-lg)",
                   }}
                 >
                   <FileDetailsPane
@@ -1064,8 +1320,11 @@ function FileBrowser() {
 
       <RenameDialog
         open={showRename}
-        currentName={renameTarget?.name || ''}
-        onClose={() => { setShowRename(false); setRenameTarget(null); }}
+        currentName={renameTarget?.name || ""}
+        onClose={() => {
+          setShowRename(false);
+          setRenameTarget(null);
+        }}
         onRename={handleRename}
       />
 
@@ -1073,65 +1332,85 @@ function FileBrowser() {
       {showDeleteConfirm && (
         <div
           style={{
-            position: 'fixed',
+            position: "fixed",
             inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             zIndex: 100,
           }}
           className="fade-in"
-          onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false); }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDeleteConfirm(false);
+          }}
         >
           <div
             style={{
-              background: 'var(--color-bg)',
-              borderRadius: 'var(--radius-xl)',
-              boxShadow: 'var(--shadow-xl)',
-              padding: 'var(--space-6)',
+              background: "var(--color-bg)",
+              borderRadius: "var(--radius-xl)",
+              boxShadow: "var(--shadow-xl)",
+              padding: "var(--space-6)",
               width: 400,
-              maxWidth: '90vw',
+              maxWidth: "90vw",
             }}
             className="slide-in"
           >
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-3)',
-              marginBottom: 'var(--space-3)',
-            }}>
-              <Icon name="alertTriangle" size={20} color="var(--color-danger)" />
-              <h2 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 600 }}>Delete</h2>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-3)",
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              <Icon
+                name="alertTriangle"
+                size={20}
+                color="var(--color-danger)"
+              />
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: "var(--text-lg)",
+                  fontWeight: 600,
+                }}
+              >
+                Delete
+              </h2>
             </div>
-            <p style={{
-              fontSize: 'var(--text-sm)',
-              color: 'var(--color-fg-muted)',
-              margin: '0 0 var(--space-3)',
-            }}>
-              Are you sure you want to delete {selectedCount} item(s)?
-              This action cannot be undone.
+            <p
+              style={{
+                fontSize: "var(--text-sm)",
+                color: "var(--color-fg-muted)",
+                margin: "0 0 var(--space-3)",
+              }}
+            >
+              Are you sure you want to delete {selectedCount} item(s)? This
+              action cannot be undone.
             </p>
-            <ul style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 'var(--space-1)',
-              margin: '0 0 var(--space-4)',
-              padding: 'var(--space-3)',
-              listStyle: 'none',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--color-bg-muted)',
-              fontSize: 'var(--text-sm)',
-              color: 'var(--color-fg)',
-            }}>
+            <ul
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-1)",
+                margin: "0 0 var(--space-4)",
+                padding: "var(--space-3)",
+                listStyle: "none",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-muted)",
+                fontSize: "var(--text-sm)",
+                color: "var(--color-fg)",
+              }}
+            >
               {deletePreviewItems.map((item) => (
                 <li
                   key={item.path}
                   style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
                   title={item.path}
                 >
@@ -1139,26 +1418,28 @@ function FileBrowser() {
                 </li>
               ))}
               {hiddenDeleteCount > 0 && (
-                <li style={{ color: 'var(--color-fg-muted)' }}>
+                <li style={{ color: "var(--color-fg-muted)" }}>
                   and {hiddenDeleteCount} more
                 </li>
               )}
             </ul>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: 'var(--space-2)',
-            }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "var(--space-2)",
+              }}
+            >
               <button
                 onClick={() => setShowDeleteConfirm(false)}
                 style={{
-                  padding: 'var(--space-2) var(--space-4)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'transparent',
-                  color: 'var(--color-fg)',
-                  cursor: 'pointer',
-                  fontSize: 'var(--text-sm)',
+                  padding: "var(--space-2) var(--space-4)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  background: "transparent",
+                  color: "var(--color-fg)",
+                  cursor: "pointer",
+                  fontSize: "var(--text-sm)",
                 }}
               >
                 Cancel
@@ -1166,14 +1447,14 @@ function FileBrowser() {
               <button
                 onClick={handleDelete}
                 style={{
-                  padding: 'var(--space-2) var(--space-4)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'var(--color-danger)',
-                  color: '#fff',
-                  cursor: 'pointer',
+                  padding: "var(--space-2) var(--space-4)",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  background: "var(--color-danger)",
+                  color: "#fff",
+                  cursor: "pointer",
                   fontWeight: 500,
-                  fontSize: 'var(--text-sm)',
+                  fontSize: "var(--text-sm)",
                 }}
               >
                 Delete
@@ -1186,40 +1467,64 @@ function FileBrowser() {
       {pendingTransfer && (
         <div
           style={{
-            position: 'fixed',
+            position: "fixed",
             inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             zIndex: 100,
           }}
           className="fade-in"
-          onClick={(e) => { if (e.target === e.currentTarget) setPendingTransfer(null); }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPendingTransfer(null);
+          }}
         >
-          <div style={{
-            width: 360,
-            background: 'var(--color-bg)',
-            borderRadius: 'var(--radius-lg)',
-            boxShadow: 'var(--shadow-lg)',
-            padding: 'var(--space-5)',
-          }}>
-            <h3 style={{ margin: 0, marginBottom: 'var(--space-2)', fontSize: 'var(--text-lg)' }}>
+          <div
+            style={{
+              width: 360,
+              background: "var(--color-bg)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-lg)",
+              padding: "var(--space-5)",
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                marginBottom: "var(--space-2)",
+                fontSize: "var(--text-lg)",
+              }}
+            >
               Move or copy?
             </h3>
-            <p style={{ margin: 0, marginBottom: 'var(--space-4)', color: 'var(--color-fg-muted)', fontSize: 'var(--text-sm)' }}>
-              Drop {pendingTransfer.paths.length} item(s) into a different share.
+            <p
+              style={{
+                margin: 0,
+                marginBottom: "var(--space-4)",
+                color: "var(--color-fg-muted)",
+                fontSize: "var(--text-sm)",
+              }}
+            >
+              Drop {pendingTransfer.paths.length} item(s) into a different
+              share.
             </p>
-            <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+            <div
+              style={{
+                display: "flex",
+                gap: "var(--space-2)",
+                justifyContent: "flex-end",
+              }}
+            >
               <button
                 onClick={() => setPendingTransfer(null)}
                 style={{
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--color-border)',
-                  background: 'transparent',
-                  color: 'var(--color-fg-muted)',
-                  cursor: 'pointer',
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border)",
+                  background: "transparent",
+                  color: "var(--color-fg-muted)",
+                  cursor: "pointer",
                 }}
               >
                 Cancel
@@ -1228,15 +1533,21 @@ function FileBrowser() {
                 onClick={() => {
                   const transfer = pendingTransfer;
                   setPendingTransfer(null);
-                  void executeTransfer(transfer.sourceRoot, transfer.paths, transfer.destRoot, transfer.dest, 'copy');
+                  void executeTransfer(
+                    transfer.sourceRoot,
+                    transfer.paths,
+                    transfer.destRoot,
+                    transfer.dest,
+                    "copy",
+                  );
                 }}
                 style={{
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--color-border)',
-                  background: 'transparent',
-                  color: 'var(--color-fg)',
-                  cursor: 'pointer',
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border)",
+                  background: "transparent",
+                  color: "var(--color-fg)",
+                  cursor: "pointer",
                 }}
               >
                 Copy
@@ -1245,15 +1556,21 @@ function FileBrowser() {
                 onClick={() => {
                   const transfer = pendingTransfer;
                   setPendingTransfer(null);
-                  void executeTransfer(transfer.sourceRoot, transfer.paths, transfer.destRoot, transfer.dest, 'move');
+                  void executeTransfer(
+                    transfer.sourceRoot,
+                    transfer.paths,
+                    transfer.destRoot,
+                    transfer.dest,
+                    "move",
+                  );
                 }}
                 style={{
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--color-accent)',
-                  background: 'var(--color-accent)',
-                  color: 'white',
-                  cursor: 'pointer',
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-accent)",
+                  background: "var(--color-accent)",
+                  color: "white",
+                  cursor: "pointer",
                 }}
               >
                 Move
@@ -1275,12 +1592,14 @@ function FileBrowser() {
 
       <ErrorToasts
         toasts={errorToasts}
-        onDismiss={(id) => setErrorToasts((current) => current.filter((toast) => toast.id !== id))}
+        onDismiss={(id) =>
+          setErrorToasts((current) =>
+            current.filter((toast) => toast.id !== id),
+          )
+        }
       />
 
-      <OperationProgressToasts
-        deleteJobs={deleteJobs}
-      />
+      <OperationProgressToasts deleteJobs={deleteJobs} />
 
       <ErrorDialog
         error={blockingError}
@@ -1291,9 +1610,12 @@ function FileBrowser() {
       <ShareDialog
         open={showShare}
         root={root}
-        path={shareTarget?.path ?? ''}
+        path={shareTarget?.path ?? ""}
         isDirectory={shareTarget?.is_dir ?? false}
-        onClose={() => { setShowShare(false); setShareTarget(null); }}
+        onClose={() => {
+          setShowShare(false);
+          setShareTarget(null);
+        }}
       />
 
       {/* Preview pane */}
@@ -1303,10 +1625,14 @@ function FileBrowser() {
           root={root}
           path={previewTarget.parentPath}
           entries={previewEntries}
-          mediaPreviewTranscodingEnabled={serverCapabilities.media_preview_transcoding}
+          mediaPreviewTranscodingEnabled={
+            serverCapabilities.media_preview_transcoding
+          }
           onClose={() => setPreviewTarget(null)}
           onNavigate={(entry) => {
-            const nextPath = previewTarget.parentPath ? `${previewTarget.parentPath}/${entry.name}` : entry.name;
+            const nextPath = previewTarget.parentPath
+              ? `${previewTarget.parentPath}/${entry.name}`
+              : entry.name;
             useViewStore.getState().select(nextPath);
             setPreviewTarget({ entry, parentPath: previewTarget.parentPath });
           }}
@@ -1319,18 +1645,18 @@ function FileBrowser() {
 function isExtractableArchive(name: string) {
   const lower = name.toLowerCase();
   return (
-    lower.endsWith('.zip') ||
-    lower.endsWith('.rar') ||
-    lower.endsWith('.7z') ||
-    lower.endsWith('.7z.001') ||
-    lower.endsWith('.tar') ||
-    lower.endsWith('.tar.gz') ||
-    lower.endsWith('.tgz') ||
-    lower.endsWith('.tar.bz2') ||
-    lower.endsWith('.tbz') ||
-    lower.endsWith('.tbz2') ||
-    lower.endsWith('.bz') ||
-    lower.endsWith('.bz2') ||
+    lower.endsWith(".zip") ||
+    lower.endsWith(".rar") ||
+    lower.endsWith(".7z") ||
+    lower.endsWith(".7z.001") ||
+    lower.endsWith(".tar") ||
+    lower.endsWith(".tar.gz") ||
+    lower.endsWith(".tgz") ||
+    lower.endsWith(".tar.bz2") ||
+    lower.endsWith(".tbz") ||
+    lower.endsWith(".tbz2") ||
+    lower.endsWith(".bz") ||
+    lower.endsWith(".bz2") ||
     /\.part\d+\.rar$/.test(lower) ||
     /\.r\d\d$/.test(lower)
   );
@@ -1343,14 +1669,18 @@ function removeDeletedPathsFromListings(
 ) {
   const deletedPaths = new Set(paths);
   queryClient.setQueriesData<DirectoryListing>(
-    { queryKey: ['listing', root] },
+    { queryKey: ["listing", root] },
     (listing) => {
       if (!listing) return listing;
       const entries = listing.entries.filter((entry) => {
-        const fullPath = listing.path ? `${listing.path}/${entry.name}` : entry.name;
+        const fullPath = listing.path
+          ? `${listing.path}/${entry.name}`
+          : entry.name;
         return !deletedPaths.has(fullPath);
       });
-      return entries.length === listing.entries.length ? listing : { ...listing, entries };
+      return entries.length === listing.entries.length
+        ? listing
+        : { ...listing, entries };
     },
   );
 }
@@ -1367,22 +1697,22 @@ function OperationProgressToasts({
       aria-live="polite"
       aria-label="File operation progress"
       style={{
-        position: 'fixed',
-        right: 'var(--space-4)',
-        bottom: 'var(--space-4)',
+        position: "fixed",
+        right: "var(--space-4)",
+        bottom: "var(--space-4)",
         zIndex: 90,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-2)',
-        width: 'min(360px, calc(100vw - 32px))',
-        pointerEvents: 'none',
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-2)",
+        width: "min(360px, calc(100vw - 32px))",
+        pointerEvents: "none",
       }}
     >
       {deleteJobs.map((job) => (
         <OperationProgressToast
           key={`delete-${job.id}`}
           iconName="alertTriangle"
-          title={`Deleting ${formatCount(job.count, 'file')}`}
+          title={`Deleting ${formatCount(job.count, "file")}`}
           detail="Removing from this share"
           indeterminate
         />
@@ -1397,7 +1727,7 @@ function OperationProgressToast({
   detail,
   indeterminate = false,
 }: {
-  iconName: React.ComponentProps<typeof Icon>['name'];
+  iconName: React.ComponentProps<typeof Icon>["name"];
   title: string;
   detail: string;
   indeterminate?: boolean;
@@ -1406,60 +1736,70 @@ function OperationProgressToast({
     <div
       className="fade-in"
       style={{
-        display: 'flex',
-        gap: 'var(--space-3)',
-        padding: 'var(--space-3)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-md)',
-        background: 'var(--color-bg)',
-        color: 'var(--color-fg)',
-        boxShadow: 'var(--shadow-lg)',
+        display: "flex",
+        gap: "var(--space-3)",
+        padding: "var(--space-3)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-md)",
+        background: "var(--color-bg)",
+        color: "var(--color-fg)",
+        boxShadow: "var(--shadow-lg)",
       }}
     >
       <Icon name={iconName} size={16} color="var(--color-accent)" />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 'var(--space-2)',
-          marginBottom: 'var(--space-1)',
-        }}>
-          <span style={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontSize: 'var(--text-sm)',
-            fontWeight: 600,
-          }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--space-2)",
+            marginBottom: "var(--space-1)",
+          }}
+        >
+          <span
+            style={{
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontSize: "var(--text-sm)",
+              fontWeight: 600,
+            }}
+          >
             {title}
           </span>
         </div>
-        <div style={{
-          height: 4,
-          borderRadius: 2,
-          background: 'var(--color-border)',
-          overflow: 'hidden',
-          marginBottom: 'var(--space-1)',
-        }}>
+        <div
+          style={{
+            height: 4,
+            borderRadius: 2,
+            background: "var(--color-border)",
+            overflow: "hidden",
+            marginBottom: "var(--space-1)",
+          }}
+        >
           <div
-            className={indeterminate ? 'operation-progress-indeterminate' : undefined}
+            className={
+              indeterminate ? "operation-progress-indeterminate" : undefined
+            }
             style={{
-              height: '100%',
-              width: indeterminate ? '42%' : '100%',
+              height: "100%",
+              width: indeterminate ? "42%" : "100%",
               borderRadius: 2,
-              background: 'var(--color-accent)',
+              background: "var(--color-accent)",
             }}
           />
         </div>
-        <div style={{
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          color: 'var(--color-fg-subtle)',
-          fontSize: 'var(--text-xs)',
-        }}>
+        <div
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: "var(--color-fg-subtle)",
+            fontSize: "var(--text-xs)",
+          }}
+        >
           {detail}
         </div>
       </div>
@@ -1468,11 +1808,14 @@ function OperationProgressToast({
 }
 
 function formatCount(count: number, noun: string) {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function isReadmeEntry(entry: FileEntry) {
-  return !entry.is_dir && ['README.md', 'Readme.md', 'readme.md'].includes(entry.name);
+  return (
+    !entry.is_dir &&
+    ["README.md", "Readme.md", "readme.md"].includes(entry.name)
+  );
 }
 
 function FreeSpaceFooter({
@@ -1488,14 +1831,14 @@ function FreeSpaceFooter({
     <div
       className="tabular-nums"
       style={{
-        marginTop: 'auto',
-        paddingTop: 'var(--space-4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 'var(--space-3)',
-        color: 'var(--color-fg-subtle)',
-        fontSize: 'var(--text-xs)',
+        marginTop: "auto",
+        paddingTop: "var(--space-4)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: "var(--space-3)",
+        color: "var(--color-fg-subtle)",
+        fontSize: "var(--text-xs)",
         fontWeight: 500,
       }}
     >
@@ -1505,12 +1848,12 @@ function FreeSpaceFooter({
           type="button"
           onClick={onShowReadme}
           style={{
-            border: 'none',
-            background: 'transparent',
+            border: "none",
+            background: "transparent",
             padding: 0,
-            color: 'var(--color-accent)',
-            cursor: 'pointer',
-            font: 'inherit',
+            color: "var(--color-accent)",
+            cursor: "pointer",
+            font: "inherit",
             fontWeight: 600,
           }}
         >

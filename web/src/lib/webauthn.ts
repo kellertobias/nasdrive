@@ -1,26 +1,28 @@
-type RawCredentialDescriptor = Omit<PublicKeyCredentialDescriptor, 'id'> & {
+type RawCredentialDescriptor = Omit<PublicKeyCredentialDescriptor, "id"> & {
   id: string;
 };
 
 type RawCreationOptions = Omit<
   PublicKeyCredentialCreationOptions,
-  'challenge' | 'user' | 'excludeCredentials'
+  "challenge" | "user" | "excludeCredentials"
 > & {
   challenge: string;
-  user: Omit<PublicKeyCredentialUserEntity, 'id'> & { id: string };
+  user: Omit<PublicKeyCredentialUserEntity, "id"> & { id: string };
   excludeCredentials?: RawCredentialDescriptor[];
 };
 
 type RawRequestOptions = Omit<
   PublicKeyCredentialRequestOptions,
-  'challenge' | 'allowCredentials'
+  "challenge" | "allowCredentials"
 > & {
   challenge: string;
   allowCredentials?: RawCredentialDescriptor[];
 };
 
 function base64urlToBuffer(value: string): ArrayBuffer {
-  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (value.length % 4)) % 4);
+  const padded =
+    value.replace(/-/g, "+").replace(/_/g, "/") +
+    "=".repeat((4 - (value.length % 4)) % 4);
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -31,15 +33,21 @@ function base64urlToBuffer(value: string): ArrayBuffer {
 
 function bufferToBase64url(source: BufferSource | null): string | null {
   if (!source) return null;
-  const bytes = source instanceof ArrayBuffer
-    ? new Uint8Array(source)
-    : new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
-  let binary = '';
+  const bytes =
+    source instanceof ArrayBuffer
+      ? new Uint8Array(source)
+      : new Uint8Array(source.buffer, source.byteOffset, source.byteLength);
+  let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
-export function prepareCreationOptions(raw: unknown): PublicKeyCredentialCreationOptions {
+export function prepareCreationOptions(
+  raw: unknown,
+): PublicKeyCredentialCreationOptions {
   const options = structuredClone(raw) as RawCreationOptions;
   return {
     ...options,
@@ -49,13 +57,15 @@ export function prepareCreationOptions(raw: unknown): PublicKeyCredentialCreatio
       id: base64urlToBuffer(options.user.id),
     },
     excludeCredentials: options.excludeCredentials?.map((credential) => ({
-    ...credential,
+      ...credential,
       id: base64urlToBuffer(credential.id),
     })),
   };
 }
 
-export function prepareRequestOptions(raw: unknown): PublicKeyCredentialRequestOptions {
+export function prepareRequestOptions(
+  raw: unknown,
+): PublicKeyCredentialRequestOptions {
   const options = structuredClone(raw) as RawRequestOptions;
   return {
     ...options,
@@ -69,7 +79,7 @@ export function prepareRequestOptions(raw: unknown): PublicKeyCredentialRequestO
 
 export function serializeCredential(credential: Credential | null): unknown {
   if (!(credential instanceof PublicKeyCredential)) {
-    throw new Error('No passkey credential was returned');
+    throw new Error("No passkey credential was returned");
   }
 
   const response = credential.response;
@@ -104,5 +114,5 @@ export function serializeCredential(credential: Credential | null): unknown {
     };
   }
 
-  throw new Error('Unsupported passkey credential response');
+  throw new Error("Unsupported passkey credential response");
 }

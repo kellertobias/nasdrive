@@ -86,7 +86,12 @@ impl IntoResponse for S3AuthError {
             _ => code.to_string(),
         };
         let body = super::xml::error_xml(code, &message);
-        (self.http_status(), [("content-type", "application/xml")], body).into_response()
+        (
+            self.http_status(),
+            [("content-type", "application/xml")],
+            body,
+        )
+            .into_response()
     }
 }
 
@@ -384,20 +389,16 @@ pub async fn load_user(
 
 async fn update_last_used(pool: &AnyPool, access_key: &str) {
     let now = chrono::Utc::now().timestamp_millis();
-    let _ = sqlx::query(
-        "UPDATE user_api_tokens SET last_used_at = $1 WHERE access_key = $2",
-    )
-    .bind(now)
-    .bind(access_key)
-    .execute(pool)
-    .await;
-    let _ = sqlx::query(
-        "UPDATE s3_share_credentials SET last_used_at = $1 WHERE access_key = $2",
-    )
-    .bind(now)
-    .bind(access_key)
-    .execute(pool)
-    .await;
+    let _ = sqlx::query("UPDATE user_api_tokens SET last_used_at = $1 WHERE access_key = $2")
+        .bind(now)
+        .bind(access_key)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("UPDATE s3_share_credentials SET last_used_at = $1 WHERE access_key = $2")
+        .bind(now)
+        .bind(access_key)
+        .execute(pool)
+        .await;
 }
 
 fn parse_query_params(query: &str) -> HashMap<String, String> {
@@ -417,12 +418,12 @@ fn extract_presigned_access_key<'a>(
         .get("X-Amz-Credential")
         .or_else(|| params.get("x-amz-credential"))
         .ok_or(S3AuthError::MissingCredentials)?;
-    cred.split('/').next().ok_or(S3AuthError::MissingCredentials)
+    cred.split('/')
+        .next()
+        .ok_or(S3AuthError::MissingCredentials)
 }
 
-fn extract_presigned_region(
-    params: &HashMap<String, String>,
-) -> Result<String, S3AuthError> {
+fn extract_presigned_region(params: &HashMap<String, String>) -> Result<String, S3AuthError> {
     let cred = params
         .get("X-Amz-Credential")
         .or_else(|| params.get("x-amz-credential"))

@@ -182,13 +182,20 @@ fn parse_tiff_exif(data: &[u8]) -> BTreeMap<String, String> {
 
     if let Some(ifd0_offset) = read_u32(data, 4, le).and_then(|offset| usize::try_from(offset).ok())
     {
-        parse_ifd(data, ifd0_offset, le, &mut out);
+        parse_ifd(data, ifd0_offset, le, 0, &mut out);
     }
 
     out
 }
 
-fn parse_ifd(data: &[u8], offset: usize, le: bool, out: &mut BTreeMap<String, String>) {
+/// Maximum IFD nesting we will follow. A well-formed EXIF blob only nests one
+/// level (IFD0 → Exif sub-IFD via tag 0x8769); a small cap leaves slack while
+/// preventing a maliciously chained or self-referential 0x8769 offset from
+/// driving unbounded recursion (which would overflow the stack and abort the
+/// whole process — a remotely triggerable DoS on the image-info/preview path).
+const MAX_EXIF_IFD_DEPTH: u8 = 4;
+
+fn parse_ifd(data: &[u8], offset: usize, le: bool, depth: u8, out: &mut BTreeMap<String, String>) {
     let Some(count) = read_u16(data, offset, le).map(usize::from) else {
         return;
     };
@@ -206,12 +213,15 @@ fn parse_ifd(data: &[u8], offset: usize, le: bool, out: &mut BTreeMap<String, St
         let value_or_offset = &data[entry_offset + 8..entry_offset + 12];
 
         if tag == 0x8769 {
+            if depth >= MAX_EXIF_IFD_DEPTH {
+                continue;
+            }
             let Some(exif_offset) =
                 read_u32(value_or_offset, 0, le).and_then(|value| usize::try_from(value).ok())
             else {
                 continue;
             };
-            parse_ifd(data, exif_offset, le, out);
+            parse_ifd(data, exif_offset, le, depth + 1, out);
             continue;
         }
 
@@ -309,4 +319,34 @@ pub enum ImageInfoError {
     Image(String),
     #[error("parse error: {0}")]
     Parse(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_referential_exif_ifd_terminates() {
+        // Minimal little-endian TIFF whose IFD0 holds a single Exif-IFD pointer
+        // (tag 0x8769) pointing back at IFD0 itself. Without the recursion depth
+        // cap this recurses forever and overflows the stack, aborting the whole
+        // process — a remotely triggerable DoS. With the cap, parsing must
+        // terminate. (If the bug regressed, this test would crash the runner
+        // rather than fail.)
+        let mut data = vec![0u8; 22];
+        data[0] = b'I'; // little-endian byte order
+        data[1] = b'I';
+        data[2] = 42; // TIFF magic (u16 LE)
+        data[4] = 8; // IFD0 offset = 8 (u32 LE)
+        data[8] = 1; // IFD0 entry count = 1 (u16 LE)
+        // Entry at offset 10:
+        data[10] = 0x69; // tag 0x8769 (u16 LE) — Exif sub-IFD pointer
+        data[11] = 0x87;
+        data[12] = 4; // field type LONG (u16 LE)
+        data[14] = 1; // value count = 1 (u32 LE)
+        data[18] = 8; // pointer value = 8, i.e. back to IFD0 (u32 LE)
+
+        let out = parse_tiff_exif(&data);
+        assert!(out.is_empty());
+    }
 }

@@ -1,4 +1,4 @@
-const API_BASE = '';
+const API_BASE = "";
 
 interface FetchOptions extends RequestInit {
   skipCsrf?: boolean;
@@ -11,21 +11,25 @@ class ApiError extends Error {
 
   constructor(status: number, statusText: string, body: unknown) {
     super(apiErrorMessage(status, statusText, body));
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.status = status;
     this.statusText = statusText;
     this.body = body;
   }
 }
 
-function apiErrorMessage(status: number, statusText: string, body: unknown): string {
-  if (body && typeof body === 'object' && 'error' in body) {
+function apiErrorMessage(
+  status: number,
+  statusText: string,
+  body: unknown,
+): string {
+  if (body && typeof body === "object" && "error" in body) {
     const error = (body as { error?: unknown }).error;
-    if (typeof error === 'string' && error.trim()) return error;
+    if (typeof error === "string" && error.trim()) return error;
   }
 
-  const fallback = [status, statusText].filter(Boolean).join(' ');
-  return fallback || 'Request failed';
+  const fallback = [status, statusText].filter(Boolean).join(" ");
+  return fallback || "Request failed";
 }
 
 function formatApiError(err: unknown): string {
@@ -37,17 +41,21 @@ function formatApiErrorDetails(err: unknown): string {
   if (err instanceof ApiError) {
     const lines = [
       err.message,
-      err.status ? `Status: ${err.status}${err.statusText ? ` ${err.statusText}` : ''}` : '',
+      err.status
+        ? `Status: ${err.status}${err.statusText ? ` ${err.statusText}` : ""}`
+        : "",
     ].filter(Boolean);
 
     if (err.body !== null && err.body !== undefined) {
       lines.push(
-        'Response body:',
-        typeof err.body === 'string' ? err.body : JSON.stringify(err.body, null, 2),
+        "Response body:",
+        typeof err.body === "string"
+          ? err.body
+          : JSON.stringify(err.body, null, 2),
       );
     }
 
-    return lines.join('\n');
+    return lines.join("\n");
   }
 
   if (err instanceof Error) {
@@ -57,34 +65,44 @@ function formatApiErrorDetails(err: unknown): string {
   return String(err);
 }
 
-async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
+async function apiFetch<T>(
+  path: string,
+  options: FetchOptions = {},
+): Promise<T> {
   const { skipCsrf, ...fetchOptions } = options;
 
   const headers = new Headers(fetchOptions.headers);
 
   // Add CSRF header for state-changing methods
-  const method = (fetchOptions.method || 'GET').toUpperCase();
-  if (!skipCsrf && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
-    headers.set('X-NasFiles-Request', '1');
+  const method = (fetchOptions.method || "GET").toUpperCase();
+  if (!skipCsrf && ["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
+    headers.set("X-NasFiles-Request", "1");
   }
 
-  if (!headers.has('Content-Type') && fetchOptions.body && typeof fetchOptions.body === 'string') {
-    headers.set('Content-Type', 'application/json');
+  if (
+    !headers.has("Content-Type") &&
+    fetchOptions.body &&
+    typeof fetchOptions.body === "string"
+  ) {
+    headers.set("Content-Type", "application/json");
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     headers,
-    credentials: 'same-origin',
+    credentials: "same-origin",
   });
 
   if (response.status === 401) {
     // Redirect to home page — the index route shows the SSO login button
     // when the user is not authenticated.
-    if (window.location.pathname !== '/' && !window.location.pathname.startsWith('/s/')) {
-      window.location.href = '/';
+    if (
+      window.location.pathname !== "/" &&
+      !window.location.pathname.startsWith("/s/")
+    ) {
+      window.location.href = "/";
     }
-    throw new ApiError(401, 'Unauthorized', null);
+    throw new ApiError(401, "Unauthorized", null);
   }
 
   if (!response.ok) {
@@ -122,13 +140,13 @@ export interface UserInfo {
 }
 
 export interface AuthInfo {
-  mode: 'sso' | 'local';
+  mode: "sso" | "local";
   passkeys_enabled: boolean;
   totp_enabled: boolean;
 }
 
 export interface AuthConfig {
-  mode: 'sso' | 'local';
+  mode: "sso" | "local";
   local_enabled: boolean;
   sso_enabled: boolean;
   passkeys_enabled: boolean;
@@ -219,7 +237,7 @@ export interface FolderCaps {
 export interface Root {
   key: string;
   display_name: string;
-  kind: 'common' | 'home';
+  kind: "common" | "home";
   caps: FolderCaps;
   /** Optional sidebar group. Roots sharing a group name render nested under a
    *  collapsible group header. Groups are display-only and not navigable. */
@@ -281,7 +299,7 @@ export interface SearchResult {
   path: string;
   parent_path: string;
   entry: FileEntry;
-  source: 'index' | 'live';
+  source: "index" | "live";
   score: number;
 }
 
@@ -294,12 +312,18 @@ export interface SearchResponse {
 
 export interface TransferJob {
   id: string;
-  operation: 'move' | 'copy' | 'delete';
+  operation: "move" | "copy" | "delete";
   source_root: string;
   dest_root: string;
   dest_path: string;
   paths: string[];
-  status: 'queued' | 'running' | 'paused_needs_confirmation' | 'done' | 'error' | 'canceled';
+  status:
+    | "queued"
+    | "running"
+    | "paused_needs_confirmation"
+    | "done"
+    | "error"
+    | "canceled";
   total_bytes: number;
   transferred_bytes: number;
   total_entries: number;
@@ -312,7 +336,7 @@ export interface TransferJob {
 
 export interface PreviewStatus {
   session: string;
-  state: 'queued' | 'starting' | 'streaming' | 'completed' | 'failed' | string;
+  state: "queued" | "starting" | "streaming" | "completed" | "failed" | string;
   profile: string;
   mode: string;
   bytes_sent: number;
@@ -324,7 +348,7 @@ export interface PreviewStatus {
   updated_at: number;
 }
 
-export type ExtractMode = 'here' | 'here_remove' | 'subfolder';
+export type ExtractMode = "here" | "here_remove" | "subfolder";
 
 export interface TrustedDeviceProof {
   id: string;
@@ -398,24 +422,28 @@ export interface TotpLoginResponse {
 // ---- API functions ----
 
 export const api = {
-  authConfig: () => apiFetch<AuthConfig>('/api/auth/config'),
+  authConfig: () => apiFetch<AuthConfig>("/api/auth/config"),
 
   me: async () => {
     try {
-      return await apiFetch<UserInfo>('/api/me');
+      return await apiFetch<UserInfo>("/api/me");
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 401) return null;
       throw err;
     }
   },
 
-  roots: () => apiFetch<{ roots: Root[] }>('/api/roots'),
+  roots: () => apiFetch<{ roots: Root[] }>("/api/roots"),
 
-  listDirectory: (root: string, path: string = '') =>
-    apiFetch<DirectoryListing>(`/api/files/${encodeURIComponent(root)}/list?path=${encodeURIComponent(path)}`),
+  listDirectory: (root: string, path: string = "") =>
+    apiFetch<DirectoryListing>(
+      `/api/files/${encodeURIComponent(root)}/list?path=${encodeURIComponent(path)}`,
+    ),
 
-  listTree: (root: string, path: string = '') =>
-    apiFetch<TreeListing>(`/api/files/${encodeURIComponent(root)}/tree?path=${encodeURIComponent(path)}`),
+  listTree: (root: string, path: string = "") =>
+    apiFetch<TreeListing>(
+      `/api/files/${encodeURIComponent(root)}/tree?path=${encodeURIComponent(path)}`,
+    ),
 
   search: (q: string, limit: number = 100) => {
     const params = new URLSearchParams({ q, limit: String(limit) });
@@ -423,51 +451,62 @@ export const api = {
   },
 
   fileInfo: (root: string, path: string) =>
-    apiFetch<FileEntry & { path: string }>(`/api/files/${encodeURIComponent(root)}/info?path=${encodeURIComponent(path)}`),
+    apiFetch<FileEntry & { path: string }>(
+      `/api/files/${encodeURIComponent(root)}/info?path=${encodeURIComponent(path)}`,
+    ),
 
   folderSizes: (root: string, paths: string[]) =>
-    apiFetch<{ sizes: Record<string, number> }>(`/api/files/${encodeURIComponent(root)}/folder-sizes`, {
-      method: 'POST',
-      body: JSON.stringify({ paths }),
-    }),
+    apiFetch<{ sizes: Record<string, number> }>(
+      `/api/files/${encodeURIComponent(root)}/folder-sizes`,
+      {
+        method: "POST",
+        body: JSON.stringify({ paths }),
+      },
+    ),
 
   downloadUrl: (root: string, path: string) =>
     `/api/files/${encodeURIComponent(root)}/download?path=${encodeURIComponent(path)}`,
 
   previewUrl: (root: string, path: string, session?: string) => {
     const params = new URLSearchParams({ path });
-    if (session) params.set('session', session);
+    if (session) params.set("session", session);
     return `/api/files/${encodeURIComponent(root)}/preview?${params.toString()}`;
   },
 
   previewStatus: (root: string, path: string, session: string) => {
     const params = new URLSearchParams({ path, session });
-    return apiFetch<PreviewStatus>(`/api/files/${encodeURIComponent(root)}/preview-status?${params.toString()}`);
+    return apiFetch<PreviewStatus>(
+      `/api/files/${encodeURIComponent(root)}/preview-status?${params.toString()}`,
+    );
   },
 
   thumbnailUrl: (
     root: string,
     path: string,
     width: number = 480,
-    entry?: Pick<FileEntry, 'modified_at' | 'size'>,
+    entry?: Pick<FileEntry, "modified_at" | "size">,
     retry: number = 0,
-    format?: 'jpeg' | 'png',
+    format?: "jpeg" | "png",
   ) => {
     const params = new URLSearchParams({
       path,
       w: String(width),
     });
-    if (format) params.set('format', format);
-    if (entry) params.set('v', `${entry.modified_at}-${entry.size}`);
-    if (retry > 0) params.set('retry', String(retry));
+    if (format) params.set("format", format);
+    if (entry) params.set("v", `${entry.modified_at}-${entry.size}`);
+    if (retry > 0) params.set("retry", String(retry));
     return `/api/files/${encodeURIComponent(root)}/thumbnail?${params.toString()}`;
   },
 
-  logout: () => apiFetch<void>('/auth/logout', { method: 'POST' }),
+  logout: () => apiFetch<void>("/auth/logout", { method: "POST" }),
 
-  localLogin: (body: { username: string; password: string; trusted_device?: TrustedDeviceProof | null }) =>
-    apiFetch<LocalLoginResponse>('/auth/local/login', {
-      method: 'POST',
+  localLogin: (body: {
+    username: string;
+    password: string;
+    trusted_device?: TrustedDeviceProof | null;
+  }) =>
+    apiFetch<LocalLoginResponse>("/auth/local/login", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
@@ -477,99 +516,113 @@ export const api = {
     trust_computer: boolean;
     device_label?: string;
   }) =>
-    apiFetch<TotpLoginResponse>('/auth/local/login/totp', {
-      method: 'POST',
+    apiFetch<TotpLoginResponse>("/auth/local/login/totp", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
   startPasskeyLogin: (username: string) =>
-    apiFetch<unknown>('/auth/local/passkey/options', {
-      method: 'POST',
+    apiFetch<unknown>("/auth/local/passkey/options", {
+      method: "POST",
       body: JSON.stringify({ username }),
     }),
 
   finishPasskeyLogin: (credential: unknown) =>
-    apiFetch<{ ok: boolean }>('/auth/local/passkey/finish', {
-      method: 'POST',
+    apiFetch<{ ok: boolean }>("/auth/local/passkey/finish", {
+      method: "POST",
       body: JSON.stringify(credential),
     }),
 
   changePassword: (current_password: string, new_password: string) =>
-    apiFetch<{ ok: boolean }>('/api/profile/password', {
-      method: 'POST',
+    apiFetch<{ ok: boolean }>("/api/profile/password", {
+      method: "POST",
       body: JSON.stringify({ current_password, new_password }),
     }),
 
   startTotpSetup: () =>
-    apiFetch<{ secret: string; url: string }>('/api/profile/totp/setup', { method: 'POST' }),
+    apiFetch<{ secret: string; url: string }>("/api/profile/totp/setup", {
+      method: "POST",
+    }),
 
   confirmTotpSetup: (code: string) =>
-    apiFetch<{ ok: boolean }>('/api/profile/totp/confirm', {
-      method: 'POST',
+    apiFetch<{ ok: boolean }>("/api/profile/totp/confirm", {
+      method: "POST",
       body: JSON.stringify({ code }),
     }),
 
   removeTotp: () =>
-    apiFetch<{ ok: boolean }>('/api/profile/totp', { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>("/api/profile/totp", { method: "DELETE" }),
 
   listTrustedDevices: () =>
-    apiFetch<{ devices: TrustedDevice[] }>('/api/profile/trusted-devices'),
+    apiFetch<{ devices: TrustedDevice[] }>("/api/profile/trusted-devices"),
 
   revokeTrustedDevice: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/profile/trusted-devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(
+      `/api/profile/trusted-devices/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
 
   listPasskeys: () =>
-    apiFetch<{ passkeys: PasskeyInfo[] }>('/api/profile/passkeys'),
+    apiFetch<{ passkeys: PasskeyInfo[] }>("/api/profile/passkeys"),
 
   startPasskeyRegistration: () =>
-    apiFetch<unknown>('/api/profile/passkeys/options', { method: 'POST' }),
+    apiFetch<unknown>("/api/profile/passkeys/options", { method: "POST" }),
 
   finishPasskeyRegistration: (credential: unknown) =>
-    apiFetch<{ ok: boolean }>('/api/profile/passkeys/finish', {
-      method: 'POST',
+    apiFetch<{ ok: boolean }>("/api/profile/passkeys/finish", {
+      method: "POST",
       body: JSON.stringify(credential),
     }),
 
   revokePasskey: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/profile/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(
+      `/api/profile/passkeys/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
 
   // ---- API tokens ----
 
   listApiTokens: () =>
-    apiFetch<{ tokens: ApiToken[] }>('/api/profile/api-tokens'),
+    apiFetch<{ tokens: ApiToken[] }>("/api/profile/api-tokens"),
 
   createApiToken: (label: string, expires_in: number | null) =>
-    apiFetch<CreatedApiToken>('/api/profile/api-tokens', {
-      method: 'POST',
+    apiFetch<CreatedApiToken>("/api/profile/api-tokens", {
+      method: "POST",
       body: JSON.stringify({ label, expires_in }),
     }),
 
   renewApiToken: (id: string, extend_by: number) =>
-    apiFetch<{ ok: boolean; expires_at: number }>(`/api/profile/api-tokens/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ extend_by }),
-    }),
+    apiFetch<{ ok: boolean; expires_at: number }>(
+      `/api/profile/api-tokens/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ extend_by }),
+      },
+    ),
 
   revokeApiToken: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/profile/api-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(
+      `/api/profile/api-tokens/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
 
   // ---- Write operations ----
 
   mkdir: (root: string, path: string, name: string) =>
     apiFetch<{ ok: boolean }>(`/api/files/${encodeURIComponent(root)}/mkdir`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ path, name }),
     }),
 
   rename: (root: string, path: string, newName: string) =>
     apiFetch<{ ok: boolean }>(`/api/files/${encodeURIComponent(root)}/rename`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ path, new_name: newName }),
     }),
 
   moveEntries: (root: string, paths: string[], dest: string) =>
     apiFetch<{ ok: boolean }>(`/api/files/${encodeURIComponent(root)}/move`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ paths, dest }),
     }),
 
@@ -578,65 +631,86 @@ export const api = {
     paths: string[],
     destRoot: string,
     dest: string,
-    operation: 'move' | 'copy',
+    operation: "move" | "copy",
   ) =>
-    apiFetch<{ ok: boolean; job_id: string }>(`/api/files/${encodeURIComponent(root)}/transfer`, {
-      method: 'POST',
-      body: JSON.stringify({ paths, dest_root: destRoot, dest, operation }),
-    }),
+    apiFetch<{ ok: boolean; job_id: string }>(
+      `/api/files/${encodeURIComponent(root)}/transfer`,
+      {
+        method: "POST",
+        body: JSON.stringify({ paths, dest_root: destRoot, dest, operation }),
+      },
+    ),
 
-  transferJobs: () =>
-    apiFetch<{ jobs: TransferJob[] }>('/api/transfer-jobs'),
+  transferJobs: () => apiFetch<{ jobs: TransferJob[] }>("/api/transfer-jobs"),
 
   cancelTransferJob: (jobId: string) =>
-    apiFetch<{ ok: boolean }>(`/api/transfer-jobs/${encodeURIComponent(jobId)}/cancel`, {
-      method: 'POST',
-    }),
+    apiFetch<{ ok: boolean }>(
+      `/api/transfer-jobs/${encodeURIComponent(jobId)}/cancel`,
+      {
+        method: "POST",
+      },
+    ),
 
   resumeFileJob: (jobId: string) =>
-    apiFetch<{ ok: boolean }>(`/api/file-jobs/${encodeURIComponent(jobId)}/resume`, {
-      method: 'POST',
-    }),
+    apiFetch<{ ok: boolean }>(
+      `/api/file-jobs/${encodeURIComponent(jobId)}/resume`,
+      {
+        method: "POST",
+      },
+    ),
 
   cancelFileJob: (jobId: string) =>
-    apiFetch<{ ok: boolean }>(`/api/file-jobs/${encodeURIComponent(jobId)}/cancel`, {
-      method: 'POST',
-    }),
+    apiFetch<{ ok: boolean }>(
+      `/api/file-jobs/${encodeURIComponent(jobId)}/cancel`,
+      {
+        method: "POST",
+      },
+    ),
 
   cleanupFileJob: (jobId: string) =>
-    apiFetch<{ ok: boolean }>(`/api/file-jobs/${encodeURIComponent(jobId)}/cleanup`, {
-      method: 'POST',
-    }),
+    apiFetch<{ ok: boolean }>(
+      `/api/file-jobs/${encodeURIComponent(jobId)}/cleanup`,
+      {
+        method: "POST",
+      },
+    ),
 
   deleteEntries: (root: string, paths: string[]) =>
-    apiFetch<{ ok: boolean; job_id: string }>(`/api/files/${encodeURIComponent(root)}/delete`, {
-      method: 'POST',
-      body: JSON.stringify({ paths }),
-    }),
+    apiFetch<{ ok: boolean; job_id: string }>(
+      `/api/files/${encodeURIComponent(root)}/delete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ paths }),
+      },
+    ),
 
   extractArchive: (root: string, path: string, mode: ExtractMode) =>
-    apiFetch<{ ok: boolean }>(`/api/files/${encodeURIComponent(root)}/extract`, {
-      method: 'POST',
-      body: JSON.stringify({ path, mode }),
-    }),
+    apiFetch<{ ok: boolean }>(
+      `/api/files/${encodeURIComponent(root)}/extract`,
+      {
+        method: "POST",
+        body: JSON.stringify({ path, mode }),
+      },
+    ),
 
   downloadZip: (root: string, paths: string[]) => {
     // Use XHR to get binary blob, then trigger download
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/api/files/${encodeURIComponent(root)}/zip`);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('X-NasFiles-Request', '1');
-      xhr.responseType = 'blob';
+      xhr.open("POST", `/api/files/${encodeURIComponent(root)}/zip`);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.setRequestHeader("X-NasFiles-Request", "1");
+      xhr.responseType = "blob";
 
-      xhr.addEventListener('load', () => {
+      xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          const disposition = xhr.getResponseHeader('Content-Disposition') || '';
+          const disposition =
+            xhr.getResponseHeader("Content-Disposition") || "";
           const match = disposition.match(/filename="?([^"]+)"?/);
-          const filename = match?.[1] || 'download.zip';
+          const filename = match?.[1] || "download.zip";
 
           const url = URL.createObjectURL(xhr.response);
-          const a = document.createElement('a');
+          const a = document.createElement("a");
           a.href = url;
           a.download = filename;
           document.body.appendChild(a);
@@ -651,55 +725,88 @@ export const api = {
         }
       });
 
-      xhr.addEventListener('error', () => reject(new ApiError(0, 'Network error', null)));
+      xhr.addEventListener("error", () =>
+        reject(new ApiError(0, "Network error", null)),
+      );
       xhr.send(JSON.stringify({ paths }));
     });
   },
 
-  upload: (root: string, path: string, files: File[], onProgress?: (pct: number) => void) => {
-    return new Promise<{ ok: boolean; files_uploaded: number }>((resolve, reject) => {
-      const formData = new FormData();
-      for (const file of files) {
-        formData.append('file', file, file.name);
-      }
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/api/files/${encodeURIComponent(root)}/upload?path=${encodeURIComponent(path)}`);
-      xhr.setRequestHeader('X-NasFiles-Request', '1');
-
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable && onProgress) {
-          onProgress(Math.round((e.loaded / e.total) * 100));
+  upload: (
+    root: string,
+    path: string,
+    files: File[],
+    onProgress?: (pct: number) => void,
+  ) => {
+    return new Promise<{ ok: boolean; files_uploaded: number }>(
+      (resolve, reject) => {
+        const formData = new FormData();
+        for (const file of files) {
+          formData.append("file", file, file.name);
         }
-      });
 
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve((parseJsonResponse(xhr.responseText) as { ok: boolean; files_uploaded: number }) ?? { ok: true, files_uploaded: 0 });
-        } else {
-          reject(new ApiError(xhr.status, xhr.statusText, parseJsonResponse(xhr.responseText)));
-        }
-      });
+        const xhr = new XMLHttpRequest();
+        xhr.open(
+          "POST",
+          `/api/files/${encodeURIComponent(root)}/upload?path=${encodeURIComponent(path)}`,
+        );
+        xhr.setRequestHeader("X-NasFiles-Request", "1");
 
-      xhr.addEventListener('error', () => {
-        reject(new ApiError(0, 'Network error', null));
-      });
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable && onProgress) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        });
 
-      xhr.send(formData);
-    });
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(
+              (parseJsonResponse(xhr.responseText) as {
+                ok: boolean;
+                files_uploaded: number;
+              }) ?? { ok: true, files_uploaded: 0 },
+            );
+          } else {
+            reject(
+              new ApiError(
+                xhr.status,
+                xhr.statusText,
+                parseJsonResponse(xhr.responseText),
+              ),
+            );
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          reject(new ApiError(0, "Network error", null));
+        });
+
+        xhr.send(formData);
+      },
+    );
   },
 
   // ---- Share management ----
 
-  createShare: (root: string, path: string, opts: {
-    target_kind: 'public' | 'guest';
-    password?: string;
-    allow_upload: boolean;
-    allow_download: boolean;
-    expires_in: number | null;
-  }) =>
-    apiFetch<{ id: string; token: string; url: string; created_at: number; expires_at: number | null }>(`/api/shares`, {
-      method: 'POST',
+  createShare: (
+    root: string,
+    path: string,
+    opts: {
+      target_kind: "public" | "guest";
+      password?: string;
+      allow_upload: boolean;
+      allow_download: boolean;
+      expires_in: number | null;
+    },
+  ) =>
+    apiFetch<{
+      id: string;
+      token: string;
+      url: string;
+      created_at: number;
+      expires_at: number | null;
+    }>(`/api/shares`, {
+      method: "POST",
       body: JSON.stringify({
         root_key: root,
         path,
@@ -708,46 +815,56 @@ export const api = {
     }),
 
   listShares: () =>
-    apiFetch<{ shares: Array<{
-      id: string;
-      root_key: string;
-      relative_path: string;
-      is_directory: boolean;
-      target_kind: string;
-      allow_upload: boolean;
-      allow_download: boolean;
-      expires_at: number | null;
-      created_at: number;
-      revoked_at: number | null;
-      access_count: number;
-      last_accessed_at: number | null;
-    }> }>('/api/shares'),
+    apiFetch<{
+      shares: Array<{
+        id: string;
+        root_key: string;
+        relative_path: string;
+        is_directory: boolean;
+        target_kind: string;
+        allow_upload: boolean;
+        allow_download: boolean;
+        expires_at: number | null;
+        created_at: number;
+        revoked_at: number | null;
+        access_count: number;
+        last_accessed_at: number | null;
+      }>;
+    }>("/api/shares"),
 
   getShare: (id: string) =>
     apiFetch<Record<string, unknown>>(`/api/shares/${encodeURIComponent(id)}`),
 
   revokeShare: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/shares/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(`/api/shares/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 
   // ---- SFTP ----
 
-  listSftpKeys: () =>
-    apiFetch<{ keys: SftpKey[] }>('/api/sftp/keys'),
+  listSftpKeys: () => apiFetch<{ keys: SftpKey[] }>("/api/sftp/keys"),
 
   addSftpKey: (public_key: string, label?: string) =>
-    apiFetch<SftpKey>('/api/sftp/keys', {
-      method: 'POST',
+    apiFetch<SftpKey>("/api/sftp/keys", {
+      method: "POST",
       body: JSON.stringify({ public_key, label }),
     }),
 
   revokeSftpKey: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/sftp/keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(`/api/sftp/keys/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
 
   listSftpTempUsers: () =>
-    apiFetch<{ users: SftpTempUser[] }>('/api/admin/sftp-temp-users'),
+    apiFetch<{ users: SftpTempUser[] }>("/api/admin/sftp-temp-users"),
 
   listSftpAccessLog: () =>
-    apiFetch<{ entries: SftpAccessLogEntry[]; total: number; limit: number; offset: number }>('/api/admin/sftp-access-log?limit=200'),
+    apiFetch<{
+      entries: SftpAccessLogEntry[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>("/api/admin/sftp-access-log?limit=200"),
 
   createSftpTempUser: (body: {
     display_name: string;
@@ -757,39 +874,48 @@ export const api = {
     expires_in: number;
     public_key: string;
   }) =>
-    apiFetch<SftpTempUser & { login: string }>('/api/admin/sftp-temp-users', {
-      method: 'POST',
+    apiFetch<SftpTempUser & { login: string }>("/api/admin/sftp-temp-users", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
   extendSftpTempUser: (id: string, expires_in: number) =>
-    apiFetch<{ ok: boolean; expires_at: number }>(`/api/admin/sftp-temp-users/${encodeURIComponent(id)}/extend`, {
-      method: 'POST',
-      body: JSON.stringify({ expires_in }),
-    }),
+    apiFetch<{ ok: boolean; expires_at: number }>(
+      `/api/admin/sftp-temp-users/${encodeURIComponent(id)}/extend`,
+      {
+        method: "POST",
+        body: JSON.stringify({ expires_in }),
+      },
+    ),
 
   revokeSftpTempUser: (id: string) =>
-    apiFetch<{ ok: boolean }>(`/api/admin/sftp-temp-users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(
+      `/api/admin/sftp-temp-users/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
 
   listActiveSftpSessions: () =>
-    apiFetch<{ sessions: ActiveSftpSession[] }>('/api/admin/sftp-sessions'),
+    apiFetch<{ sessions: ActiveSftpSession[] }>("/api/admin/sftp-sessions"),
 
   listIpBlocklist: () =>
-    apiFetch<{ entries: IpBlocklistEntry[] }>('/api/admin/ip-blocklist'),
+    apiFetch<{ entries: IpBlocklistEntry[] }>("/api/admin/ip-blocklist"),
 
   addIpBlocklistEntry: (ip: string, reason?: string) =>
-    apiFetch<{ ok: boolean; ip: string }>('/api/admin/ip-blocklist', {
-      method: 'POST',
+    apiFetch<{ ok: boolean; ip: string }>("/api/admin/ip-blocklist", {
+      method: "POST",
       body: JSON.stringify({ ip, reason }),
     }),
 
   removeIpBlocklistEntry: (ip: string) =>
-    apiFetch<{ ok: boolean }>(`/api/admin/ip-blocklist/${encodeURIComponent(ip)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(
+      `/api/admin/ip-blocklist/${encodeURIComponent(ip)}`,
+      { method: "DELETE" },
+    ),
 
   // ---- Local user admin ----
 
   listAdminUsers: () =>
-    apiFetch<{ users: AdminUserDetails[] }>('/api/admin/users'),
+    apiFetch<{ users: AdminUserDetails[] }>("/api/admin/users"),
 
   createLocalUser: (body: {
     username: string;
@@ -798,38 +924,59 @@ export const api = {
     has_home: boolean;
     folder_permissions: Record<string, FolderCaps>;
   }) =>
-    apiFetch<{ id: string; username: string; display_name: string; password: string }>('/api/admin/users', {
-      method: 'POST',
+    apiFetch<{
+      id: string;
+      username: string;
+      display_name: string;
+      password: string;
+    }>("/api/admin/users", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 
-  updateLocalUser: (id: string, body: {
-    display_name?: string;
-    is_admin?: boolean;
-    has_home?: boolean;
-    folder_permissions?: Record<string, FolderCaps>;
-  }) =>
+  updateLocalUser: (
+    id: string,
+    body: {
+      display_name?: string;
+      is_admin?: boolean;
+      has_home?: boolean;
+      folder_permissions?: Record<string, FolderCaps>;
+    },
+  ) =>
     apiFetch<{ ok: boolean }>(`/api/admin/users/${encodeURIComponent(id)}`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(body),
     }),
 
   resetLocalUserPassword: (id: string) =>
-    apiFetch<{ ok: boolean; password: string }>(`/api/admin/users/${encodeURIComponent(id)}/reset-password`, {
-      method: 'POST',
-    }),
+    apiFetch<{ ok: boolean; password: string }>(
+      `/api/admin/users/${encodeURIComponent(id)}/reset-password`,
+      {
+        method: "POST",
+      },
+    ),
 
   listAdminPasskeys: (id: string) =>
-    apiFetch<{ passkeys: PasskeyInfo[] }>(`/api/admin/users/${encodeURIComponent(id)}/passkeys`),
+    apiFetch<{ passkeys: PasskeyInfo[] }>(
+      `/api/admin/users/${encodeURIComponent(id)}/passkeys`,
+    ),
 
   revokeAdminPasskey: (userId: string, passkeyId: string) =>
-    apiFetch<{ ok: boolean }>(`/api/admin/users/${encodeURIComponent(userId)}/passkeys/${encodeURIComponent(passkeyId)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(
+      `/api/admin/users/${encodeURIComponent(userId)}/passkeys/${encodeURIComponent(passkeyId)}`,
+      { method: "DELETE" },
+    ),
 
   listAdminTrustedDevices: (id: string) =>
-    apiFetch<{ devices: TrustedDevice[] }>(`/api/admin/users/${encodeURIComponent(id)}/trusted-devices`),
+    apiFetch<{ devices: TrustedDevice[] }>(
+      `/api/admin/users/${encodeURIComponent(id)}/trusted-devices`,
+    ),
 
   revokeAdminTrustedDevice: (userId: string, deviceId: string) =>
-    apiFetch<{ ok: boolean }>(`/api/admin/users/${encodeURIComponent(userId)}/trusted-devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' }),
+    apiFetch<{ ok: boolean }>(
+      `/api/admin/users/${encodeURIComponent(userId)}/trusted-devices/${encodeURIComponent(deviceId)}`,
+      { method: "DELETE" },
+    ),
 
   // ---- Public share access ----
 
@@ -845,54 +992,77 @@ export const api = {
     }>(`/api/public/shares/${encodeURIComponent(token)}`),
 
   shareAuth: (token: string, password?: string) =>
-    apiFetch<{ bearer: string; expires_in: number }>(`/api/public/shares/${encodeURIComponent(token)}/auth`, {
-      method: 'POST',
-      body: JSON.stringify({ password: password || null }),
-    }),
+    apiFetch<{ bearer: string; expires_in: number }>(
+      `/api/public/shares/${encodeURIComponent(token)}/auth`,
+      {
+        method: "POST",
+        body: JSON.stringify({ password: password || null }),
+      },
+    ),
 
-  shareList: (token: string, bearer: string, path: string = '') =>
-    apiFetch<DirectoryListing>(`/api/public/shares/${encodeURIComponent(token)}/list?path=${encodeURIComponent(path)}`, {
-      headers: { Authorization: `Bearer ${bearer}` },
-    }),
+  shareList: (token: string, bearer: string, path: string = "") =>
+    apiFetch<DirectoryListing>(
+      `/api/public/shares/${encodeURIComponent(token)}/list?path=${encodeURIComponent(path)}`,
+      {
+        headers: { Authorization: `Bearer ${bearer}` },
+      },
+    ),
 
   shareDownloadUrl: (token: string, bearer: string, path: string) =>
     `/api/public/shares/${encodeURIComponent(token)}/download?path=${encodeURIComponent(path)}&t=${encodeURIComponent(bearer)}`,
 
   shareInfo: (token: string, bearer: string, path: string) =>
-    apiFetch<FileEntry & { path: string }>(`/api/public/shares/${encodeURIComponent(token)}/info?path=${encodeURIComponent(path)}`, {
-      headers: { Authorization: `Bearer ${bearer}` },
-    }),
+    apiFetch<FileEntry & { path: string }>(
+      `/api/public/shares/${encodeURIComponent(token)}/info?path=${encodeURIComponent(path)}`,
+      {
+        headers: { Authorization: `Bearer ${bearer}` },
+      },
+    ),
 
-  sharePreviewUrl: (token: string, bearer: string, path: string, session?: string) => {
+  sharePreviewUrl: (
+    token: string,
+    bearer: string,
+    path: string,
+    session?: string,
+  ) => {
     const params = new URLSearchParams({ path, t: bearer });
-    if (session) params.set('session', session);
+    if (session) params.set("session", session);
     return `/api/public/shares/${encodeURIComponent(token)}/preview?${params.toString()}`;
   },
 
-  sharePreviewStatus: (token: string, bearer: string, path: string, session: string) => {
+  sharePreviewStatus: (
+    token: string,
+    bearer: string,
+    path: string,
+    session: string,
+  ) => {
     const params = new URLSearchParams({ path, session });
-    return apiFetch<PreviewStatus>(`/api/public/shares/${encodeURIComponent(token)}/preview-status?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${bearer}` },
-    });
+    return apiFetch<PreviewStatus>(
+      `/api/public/shares/${encodeURIComponent(token)}/preview-status?${params.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${bearer}` },
+      },
+    );
   },
 
   shareDownloadZip: (token: string, bearer: string, paths: string[]) => {
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/api/public/shares/${encodeURIComponent(token)}/zip`);
-      xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.setRequestHeader('Authorization', `Bearer ${bearer}`);
-      xhr.setRequestHeader('X-NasFiles-Request', '1');
-      xhr.responseType = 'blob';
+      xhr.open("POST", `/api/public/shares/${encodeURIComponent(token)}/zip`);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.setRequestHeader("Authorization", `Bearer ${bearer}`);
+      xhr.setRequestHeader("X-NasFiles-Request", "1");
+      xhr.responseType = "blob";
 
-      xhr.addEventListener('load', () => {
+      xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          const disposition = xhr.getResponseHeader('Content-Disposition') || '';
+          const disposition =
+            xhr.getResponseHeader("Content-Disposition") || "";
           const match = disposition.match(/filename="?([^"]+)"?/);
-          const filename = match?.[1] || 'download.zip';
+          const filename = match?.[1] || "download.zip";
 
           const url = URL.createObjectURL(xhr.response);
-          const a = document.createElement('a');
+          const a = document.createElement("a");
           a.href = url;
           a.download = filename;
           document.body.appendChild(a);
@@ -907,39 +1077,65 @@ export const api = {
         }
       });
 
-      xhr.addEventListener('error', () => reject(new ApiError(0, 'Network error', null)));
+      xhr.addEventListener("error", () =>
+        reject(new ApiError(0, "Network error", null)),
+      );
       xhr.send(JSON.stringify({ paths }));
     });
   },
 
-  shareUpload: (token: string, bearer: string, path: string, files: File[], onProgress?: (pct: number) => void) => {
-    return new Promise<{ ok: boolean; files_uploaded: number }>((resolve, reject) => {
-      const formData = new FormData();
-      for (const file of files) {
-        formData.append('file', file, file.name);
-      }
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/api/public/shares/${encodeURIComponent(token)}/upload?path=${encodeURIComponent(path)}`);
-      xhr.setRequestHeader('Authorization', `Bearer ${bearer}`);
-      xhr.setRequestHeader('X-NasFiles-Request', '1');
-
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable && onProgress) {
-          onProgress(Math.round((e.loaded / e.total) * 100));
+  shareUpload: (
+    token: string,
+    bearer: string,
+    path: string,
+    files: File[],
+    onProgress?: (pct: number) => void,
+  ) => {
+    return new Promise<{ ok: boolean; files_uploaded: number }>(
+      (resolve, reject) => {
+        const formData = new FormData();
+        for (const file of files) {
+          formData.append("file", file, file.name);
         }
-      });
+        const xhr = new XMLHttpRequest();
+        xhr.open(
+          "POST",
+          `/api/public/shares/${encodeURIComponent(token)}/upload?path=${encodeURIComponent(path)}`,
+        );
+        xhr.setRequestHeader("Authorization", `Bearer ${bearer}`);
+        xhr.setRequestHeader("X-NasFiles-Request", "1");
 
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(parseJsonResponse(xhr.responseText) as { ok: boolean; files_uploaded: number } ?? { ok: true, files_uploaded: files.length });
-        } else {
-          reject(new ApiError(xhr.status, xhr.statusText, parseJsonResponse(xhr.responseText)));
-        }
-      });
+        xhr.upload.addEventListener("progress", (e) => {
+          if (e.lengthComputable && onProgress) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        });
 
-      xhr.addEventListener('error', () => reject(new ApiError(0, 'Network error', null)));
-      xhr.send(formData);
-    });
+        xhr.addEventListener("load", () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(
+              (parseJsonResponse(xhr.responseText) as {
+                ok: boolean;
+                files_uploaded: number;
+              }) ?? { ok: true, files_uploaded: files.length },
+            );
+          } else {
+            reject(
+              new ApiError(
+                xhr.status,
+                xhr.statusText,
+                parseJsonResponse(xhr.responseText),
+              ),
+            );
+          }
+        });
+
+        xhr.addEventListener("error", () =>
+          reject(new ApiError(0, "Network error", null)),
+        );
+        xhr.send(formData);
+      },
+    );
   },
 };
 
@@ -955,10 +1151,10 @@ function parseJsonResponse(text: string): unknown {
 async function readXhrErrorBody(xhr: XMLHttpRequest): Promise<unknown> {
   const response = xhr.response;
   if (response instanceof Blob) {
-    const text = await response.text().catch(() => '');
+    const text = await response.text().catch(() => "");
     return parseJsonResponse(text);
   }
-  if (typeof response === 'string') return parseJsonResponse(response);
+  if (typeof response === "string") return parseJsonResponse(response);
   if (xhr.responseText) return parseJsonResponse(xhr.responseText);
   return null;
 }

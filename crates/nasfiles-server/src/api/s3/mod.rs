@@ -65,7 +65,9 @@ async fn handle_get(
     headers: HeaderMap,
 ) -> Response {
     if let Some(upload_id) = q.get("uploadId") {
-        let qp = multipart::UploadIdQuery { upload_id: upload_id.clone() };
+        let qp = multipart::UploadIdQuery {
+            upload_id: upload_id.clone(),
+        };
         return multipart::list_parts_inner(&state, &principal, &bucket, &key, &qp).await;
     }
     object::get_object_inner(&state, &principal, &bucket, &key, &headers).await
@@ -89,7 +91,10 @@ async fn handle_put(
     req: Request,
 ) -> Response {
     if let Some(upload_id) = q.get("uploadId") {
-        let part_number: u32 = q.get("partNumber").and_then(|s| s.parse().ok()).unwrap_or(0);
+        let part_number: u32 = q
+            .get("partNumber")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
         let qp = multipart::UploadPartQuery {
             upload_id: upload_id.clone(),
             part_number,
@@ -110,7 +115,9 @@ async fn handle_post(
         return multipart::create_multipart_upload_inner(&state, &principal, &bucket, &key).await;
     }
     if let Some(upload_id) = q.get("uploadId") {
-        let qp = multipart::UploadIdQuery { upload_id: upload_id.clone() };
+        let qp = multipart::UploadIdQuery {
+            upload_id: upload_id.clone(),
+        };
         return multipart::complete_multipart_upload_inner(&state, &principal, &bucket, &key, &qp)
             .await;
     }
@@ -125,7 +132,9 @@ async fn handle_delete(
     Query(q): Query<HashMap<String, String>>,
 ) -> Response {
     if let Some(upload_id) = q.get("uploadId") {
-        let qp = multipart::UploadIdQuery { upload_id: upload_id.clone() };
+        let qp = multipart::UploadIdQuery {
+            upload_id: upload_id.clone(),
+        };
         return multipart::abort_multipart_upload_inner(&state, &principal, &bucket, &key, &qp)
             .await;
     }

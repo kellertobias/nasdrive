@@ -79,7 +79,9 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(b) = u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16) {
+            if let Ok(b) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
                 out.push(b);
                 i += 3;
                 continue;
@@ -155,7 +157,13 @@ pub fn verify_header_auth(
 ) -> bool {
     let canonical_uri = uri_encode(path, false);
     let canonical_query = canonical_query_string(raw_query);
-    let cr_hash = canonical_request_hash(method, &canonical_uri, &canonical_query, headers, payload_hash);
+    let cr_hash = canonical_request_hash(
+        method,
+        &canonical_uri,
+        &canonical_query,
+        headers,
+        payload_hash,
+    );
 
     let scope = format!("{date}/{region}/{service}/aws4_request");
     let string_to_sign = format!("AWS4-HMAC-SHA256\n{datetime}\n{scope}\n{cr_hash}");
@@ -187,7 +195,13 @@ pub fn verify_presigned(
     let canonical_uri = uri_encode(path, false);
     let canonical_query = canonical_query_string(raw_query_without_sig);
     let headers = vec![("host".to_string(), host_header.to_string())];
-    let cr_hash = canonical_request_hash(method, &canonical_uri, &canonical_query, &headers, "UNSIGNED-PAYLOAD");
+    let cr_hash = canonical_request_hash(
+        method,
+        &canonical_uri,
+        &canonical_query,
+        &headers,
+        "UNSIGNED-PAYLOAD",
+    );
 
     let scope = format!("{date}/{region}/{service}/aws4_request");
     let string_to_sign = format!("AWS4-HMAC-SHA256\n{datetime}\n{scope}\n{cr_hash}");
@@ -203,12 +217,17 @@ fn subtle_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 /// Parse the `Authorization` header for SigV4.
 /// Returns `(access_key, date, region, service, signed_header_names, signature)`.
-pub fn parse_authorization(auth: &str) -> Option<(String, String, String, String, Vec<String>, String)> {
+pub fn parse_authorization(
+    auth: &str,
+) -> Option<(String, String, String, String, Vec<String>, String)> {
     let auth = auth.trim();
     let rest = auth.strip_prefix("AWS4-HMAC-SHA256 ")?;
 
@@ -253,7 +272,10 @@ mod tests {
 
     #[test]
     fn test_uri_encode_path() {
-        assert_eq!(uri_encode("/home/my files/test.txt", false), "/home/my%20files/test.txt");
+        assert_eq!(
+            uri_encode("/home/my files/test.txt", false),
+            "/home/my%20files/test.txt"
+        );
         assert_eq!(uri_encode("hello world", true), "hello%20world");
         assert_eq!(uri_encode("a-z_0.~", true), "a-z_0.~");
         assert_eq!(uri_encode("/", false), "/");

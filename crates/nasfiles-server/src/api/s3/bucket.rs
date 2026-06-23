@@ -12,10 +12,7 @@ use super::{
 };
 
 /// GET /s3/ — ListBuckets
-pub async fn list_buckets(
-    State(state): State<AppState>,
-    S3Auth(principal): S3Auth,
-) -> Response {
+pub async fn list_buckets(State(state): State<AppState>, S3Auth(principal): S3Auth) -> Response {
     match &principal {
         S3Principal::UserToken { user_id, user } => {
             let roots = crate::fs::roots::visible_roots(&state.config, user);

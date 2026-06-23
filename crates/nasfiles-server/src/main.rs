@@ -162,10 +162,7 @@ async fn main() -> anyhow::Result<()> {
             get(api::files::preview_status),
         )
         .route("/files/{root}/info", get(api::files::file_info))
-        .route(
-            "/files/{root}/folder-sizes",
-            post(api::files::folder_sizes),
-        )
+        .route("/files/{root}/folder-sizes", post(api::files::folder_sizes))
         .route(
             "/files/{root}/thumbnail",
             get(api::thumbnails::get_thumbnail),
@@ -278,10 +275,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/sftp-temp-users", get(sftp::api::list_temp_users))
         .route("/admin/sftp-temp-users", post(sftp::api::create_temp_user))
         .route("/admin/sftp-access-log", get(sftp::api::list_access_log))
-        .route(
-            "/admin/sftp-sessions",
-            get(sftp::api::list_active_sessions),
-        )
+        .route("/admin/sftp-sessions", get(sftp::api::list_active_sessions))
         .route(
             "/admin/sftp-temp-users/{id}/extend",
             post(sftp::api::extend_temp_user),

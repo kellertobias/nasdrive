@@ -1,9 +1,9 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
-export type ViewMode = 'grid' | 'list' | 'columns';
-export type SortField = 'name' | 'size' | 'modified_at';
-export type SortDirection = 'asc' | 'desc';
+export type ViewMode = "grid" | "list" | "columns";
+export type SortField = "name" | "size" | "modified_at";
+export type SortDirection = "asc" | "desc";
 
 interface ViewState {
   viewMode: ViewMode;
@@ -34,9 +34,9 @@ interface ViewState {
 export const useViewStore = create<ViewState>()(
   persist(
     (set, get) => ({
-      viewMode: 'grid',
-      sortField: 'name',
-      sortDirection: 'asc',
+      viewMode: "grid",
+      sortField: "name",
+      sortDirection: "asc",
       selectedPaths: new Set<string>(),
       sidebarOpen: true,
       sidebarWidth: 240,
@@ -48,13 +48,17 @@ export const useViewStore = create<ViewState>()(
       setSortField: (field) => {
         const current = get();
         if (current.sortField === field) {
-          set({ sortDirection: current.sortDirection === 'asc' ? 'desc' : 'asc' });
+          set({
+            sortDirection: current.sortDirection === "asc" ? "desc" : "asc",
+          });
         } else {
-          set({ sortField: field, sortDirection: 'asc' });
+          set({ sortField: field, sortDirection: "asc" });
         }
       },
       toggleSortDirection: () =>
-        set((s) => ({ sortDirection: s.sortDirection === 'asc' ? 'desc' : 'asc' })),
+        set((s) => ({
+          sortDirection: s.sortDirection === "asc" ? "desc" : "asc",
+        })),
       setSidebarWidth: (width) => set({ sidebarWidth: width }),
       setShareColumnWidth: (width) => set({ shareColumnWidth: width }),
       setFolderColumnWidth: (width) => set({ folderColumnWidth: width }),
@@ -79,7 +83,7 @@ export const useViewStore = create<ViewState>()(
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
     }),
     {
-      name: 'nasfiles-view',
+      name: "nasfiles-view",
       partialize: (state) => ({
         viewMode: state.viewMode,
         sortField: state.sortField,

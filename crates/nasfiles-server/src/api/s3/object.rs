@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use axum::{
     http::{HeaderMap, StatusCode},
@@ -238,6 +238,28 @@ pub async fn get_object_inner(
     }
 }
 
+/// The lowercase hex SHA-256 the client committed to in `x-amz-content-sha256`,
+/// but only when it is a real digest. `UNSIGNED-PAYLOAD` and the streaming
+/// sentinels (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`, …) are not literal body
+/// hashes, so there is nothing to verify and we return `None`.
+///
+/// SigV4 signs this header value, so the signature binds the *claimed* hash —
+/// but nothing binds the actual bytes unless we hash the body and compare. A
+/// well-behaved client never sends a hash that disagrees with its body, so this
+/// only ever rejects a tampered/forged write (e.g. a body swapped on a
+/// TLS-terminating hop) and never breaks a legitimate upload.
+pub(super) fn expected_payload_sha256(headers: &HeaderMap) -> Option<String> {
+    let value = headers
+        .get("x-amz-content-sha256")
+        .and_then(|v| v.to_str().ok())?
+        .trim();
+    if value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Some(value.to_ascii_lowercase())
+    } else {
+        None
+    }
+}
+
 // ---- PutObject ----
 
 pub async fn put_object_inner(
@@ -299,10 +321,14 @@ pub async fn put_object_inner(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "InternalError",
                 &e.to_string(),
-            )
+            );
         }
     };
 
+    let expected_sha = expected_payload_sha256(req.headers());
+    let mut hasher = expected_sha
+        .as_ref()
+        .map(|_| <sha2::Sha256 as sha2::Digest>::new());
     let mut body = req.into_body().into_data_stream();
     let mut written: u64 = 0;
 
@@ -318,6 +344,9 @@ pub async fn put_object_inner(
                         "EntityTooLarge",
                         "object exceeds maximum size",
                     );
+                }
+                if let Some(h) = hasher.as_mut() {
+                    sha2::Digest::update(h, &data);
                 }
                 if let Err(e) = file.write_all(&data).await {
                     let _ = tokio::fs::remove_file(&temp_path).await;
@@ -346,6 +375,19 @@ pub async fn put_object_inner(
             "InternalError",
             &e.to_string(),
         );
+    }
+
+    // Reject the write if the body doesn't match the signed payload hash.
+    if let (Some(expected), Some(h)) = (&expected_sha, hasher) {
+        let actual = hex::encode(sha2::Digest::finalize(h));
+        if actual != *expected {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return xml_error(
+                StatusCode::BAD_REQUEST,
+                "XAmzContentSHA256Mismatch",
+                "the provided x-amz-content-sha256 does not match the computed hash of the request body",
+            );
+        }
     }
 
     #[cfg(unix)]

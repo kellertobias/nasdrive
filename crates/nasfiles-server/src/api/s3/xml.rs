@@ -86,7 +86,12 @@ pub fn list_objects_v2_xml(result: &ListObjectsV2Result) -> String {
     let prefixes_xml: String = result
         .common_prefixes
         .iter()
-        .map(|p| format!("<CommonPrefixes><Prefix>{}</Prefix></CommonPrefixes>", xml_escape(p)))
+        .map(|p| {
+            format!(
+                "<CommonPrefixes><Prefix>{}</Prefix></CommonPrefixes>",
+                xml_escape(p)
+            )
+        })
         .collect();
 
     let truncated = if result.is_truncated { "true" } else { "false" };
@@ -128,7 +133,12 @@ pub fn create_multipart_upload_xml(bucket: &str, key: &str, upload_id: &str) -> 
     )
 }
 
-pub fn complete_multipart_upload_xml(location: &str, bucket: &str, key: &str, etag: &str) -> String {
+pub fn complete_multipart_upload_xml(
+    location: &str,
+    bucket: &str,
+    key: &str,
+    etag: &str,
+) -> String {
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
          <CompleteMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\

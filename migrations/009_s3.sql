@@ -1,6 +1,7 @@
 -- User-generated API tokens for S3 access.
--- secret_key is stored plaintext (not hashed) because SigV4 verification
--- requires re-computing HMAC(secret, ...) — a one-way hash can't do that.
+-- secret_key cannot be hashed (SigV4 verification re-computes HMAC(secret, ...),
+-- which a one-way hash can't do), so it is encrypted at rest with AES-256-GCM
+-- (see crypto.rs) and only decrypted in-memory to verify a signature.
 CREATE TABLE IF NOT EXISTS user_api_tokens (
     id           TEXT PRIMARY KEY,
     user_id      TEXT NOT NULL REFERENCES users(id),

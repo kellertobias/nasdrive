@@ -108,13 +108,17 @@ pub async fn create_token(
     let now = chrono::Utc::now().timestamp_millis();
     let expires_at = body.expires_in.map(|s| now + s * 1000);
 
-    let encrypted_secret = match crate::crypto::encrypt_secret(&state.config.session_secret, &secret_key) {
-        Ok(v) => v,
-        Err(e) => return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": format!("failed to store token: {e}")})),
-        ).into_response(),
-    };
+    let encrypted_secret =
+        match crate::crypto::encrypt_secret(&state.config.session_secret, &secret_key) {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("failed to store token: {e}")})),
+                )
+                    .into_response();
+            }
+        };
 
     if let Err(e) = sqlx::query(
         "INSERT INTO user_api_tokens (id, user_id, label, access_key, secret_key, created_at, expires_at) \

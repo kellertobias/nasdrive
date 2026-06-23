@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId } from "react";
 
 interface AppLogoProps {
   size?: number;
@@ -16,10 +16,10 @@ export function AppLogo({
   return (
     <span
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
+        display: "inline-flex",
+        alignItems: "center",
         gap: compact ? 8 : 10,
-        color: 'var(--color-fg)',
+        color: "var(--color-fg)",
         lineHeight: 1,
       }}
     >
@@ -29,7 +29,7 @@ export function AppLogo({
           style={{
             fontSize: wordmarkSize,
             fontWeight: 750,
-            letterSpacing: 'var(--tracking-normal)',
+            letterSpacing: "var(--tracking-normal)",
           }}
         >
           nasfiles
@@ -40,7 +40,7 @@ export function AppLogo({
 }
 
 function LogoMark({ size }: { size: number }) {
-  const id = useId().replace(/:/g, '');
+  const id = useId().replace(/:/g, "");
   const bgId = `${id}-bg`;
   const pageId = `${id}-page`;
 
@@ -51,15 +51,29 @@ function LogoMark({ size }: { size: number }) {
       viewBox="0 0 64 64"
       role="img"
       aria-label="nasfiles"
-      style={{ display: 'block', flexShrink: 0 }}
+      style={{ display: "block", flexShrink: 0 }}
     >
       <defs>
-        <linearGradient id={bgId} x1="12" y1="9" x2="52" y2="55" gradientUnits="userSpaceOnUse">
+        <linearGradient
+          id={bgId}
+          x1="12"
+          y1="9"
+          x2="52"
+          y2="55"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop stopColor="#5f7cff" />
           <stop offset="0.52" stopColor="#31b5c9" />
           <stop offset="1" stopColor="#36c17b" />
         </linearGradient>
-        <linearGradient id={pageId} x1="21" y1="16" x2="44" y2="47" gradientUnits="userSpaceOnUse">
+        <linearGradient
+          id={pageId}
+          x1="21"
+          y1="16"
+          x2="44"
+          y2="47"
+          gradientUnits="userSpaceOnUse"
+        >
           <stop stopColor="#ffffff" />
           <stop offset="1" stopColor="#dff7f2" />
         </linearGradient>

@@ -74,9 +74,10 @@ pub async fn share_auth(
 
     // Check rate limiting
     if state.rate_limiter.is_rate_limited(&token_hash) {
-        let ip = extract_ip(&headers);
+        let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
         let ua = extract_user_agent(&headers);
-        let _ = audit::log_access(&state.pool, &share.id, ip, ua, "auth_fail", None).await;
+        let _ =
+            audit::log_access(&state.pool, &share.id, ip.as_deref(), ua, "auth_fail", None).await;
         return access::ShareAccessError::RateLimited.into_response();
     }
 
@@ -99,9 +100,11 @@ pub async fn share_auth(
             }
             Ok(false) => {
                 state.rate_limiter.record_failure(&token_hash);
-                let ip = extract_ip(&headers);
+                let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
                 let ua = extract_user_agent(&headers);
-                let _ = audit::log_access(&state.pool, &share.id, ip, ua, "auth_fail", None).await;
+                let _ =
+                    audit::log_access(&state.pool, &share.id, ip.as_deref(), ua, "auth_fail", None)
+                        .await;
                 return (
                     axum::http::StatusCode::UNAUTHORIZED,
                     Json(serde_json::json!({"error": "incorrect password"})),
@@ -115,9 +118,10 @@ pub async fn share_auth(
     // Issue bearer token
     match bearer::issue_bearer(&state.config.session_secret, &share.id) {
         Ok(bearer) => {
-            let ip = extract_ip(&headers);
+            let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
             let ua = extract_user_agent(&headers);
-            let _ = audit::log_access(&state.pool, &share.id, ip, ua, "open", None).await;
+            let _ =
+                audit::log_access(&state.pool, &share.id, ip.as_deref(), ua, "open", None).await;
 
             Json(serde_json::json!({
                 "bearer": bearer,
@@ -153,6 +157,13 @@ pub async fn share_list(
         return e.into_response();
     }
 
+    // A share with downloads disabled (e.g. an upload-only drop box) must not
+    // expose its file tree: listing leaks every name/size/mtime in scope even
+    // though the bytes are withheld. Gate it like the other content endpoints.
+    if let Some(resp) = reject_if_download_disallowed(share.allow_download) {
+        return resp;
+    }
+
     // Resolve the path within the share
     let resolved =
         match access::resolve_share_path(&state.pool, &state.config, &share, &query.path).await {
@@ -162,10 +173,17 @@ pub async fn share_list(
 
     match listing::list_directory(&resolved, !state.config.no_server_side_execution) {
         Ok(entries) => {
-            let ip = extract_ip(&headers);
+            let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
             let ua = extract_user_agent(&headers);
-            let _ =
-                audit::log_access(&state.pool, &share.id, ip, ua, "list", Some(&query.path)).await;
+            let _ = audit::log_access(
+                &state.pool,
+                &share.id,
+                ip.as_deref(),
+                ua,
+                "list",
+                Some(&query.path),
+            )
+            .await;
 
             Json(serde_json::json!({
                 "path": query.path,
@@ -217,12 +235,12 @@ pub async fn share_download(
             Err(e) => return e.into_response(),
         };
 
-    let ip = extract_ip(&headers);
+    let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
     let ua = extract_user_agent(&headers);
     let _ = audit::log_access(
         &state.pool,
         &share.id,
-        ip,
+        ip.as_deref(),
         ua,
         "download",
         Some(&query.path),
@@ -535,10 +553,17 @@ pub async fn share_upload(
         count += 1;
     }
 
-    let ip = extract_ip(&headers);
+    let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
     let ua = extract_user_agent(&headers);
-    let _ =
-        audit::log_access(&state.pool, &share.id, ip, ua, "upload", Some(&query.path)).await;
+    let _ = audit::log_access(
+        &state.pool,
+        &share.id,
+        ip.as_deref(),
+        ua,
+        "upload",
+        Some(&query.path),
+    )
+    .await;
 
     Json(serde_json::json!({"ok": true, "files_uploaded": count})).into_response()
 }
@@ -579,12 +604,12 @@ pub async fn share_zip(
         resolved_paths.push(resolved);
     }
 
-    let ip = extract_ip(&headers);
+    let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
     let ua = extract_user_agent(&headers);
     let _ = audit::log_access(
         &state.pool,
         &share.id,
-        ip,
+        ip.as_deref(),
         ua,
         "download_zip",
         Some(&format!("{:?}", body.paths)),
@@ -646,9 +671,10 @@ pub async fn share_s3_credentials(
     let token_hash = tokens::hash_token(&raw_token);
 
     if state.rate_limiter.is_rate_limited(&token_hash) {
-        let ip = extract_ip(&headers);
+        let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
         let ua = extract_user_agent(&headers);
-        let _ = audit::log_access(&state.pool, &share.id, ip, ua, "auth_fail", None).await;
+        let _ =
+            audit::log_access(&state.pool, &share.id, ip.as_deref(), ua, "auth_fail", None).await;
         return access::ShareAccessError::RateLimited.into_response();
     }
 
@@ -669,9 +695,11 @@ pub async fn share_s3_credentials(
             }
             Ok(false) => {
                 state.rate_limiter.record_failure(&token_hash);
-                let ip = extract_ip(&headers);
+                let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
                 let ua = extract_user_agent(&headers);
-                let _ = audit::log_access(&state.pool, &share.id, ip, ua, "auth_fail", None).await;
+                let _ =
+                    audit::log_access(&state.pool, &share.id, ip.as_deref(), ua, "auth_fail", None)
+                        .await;
                 return (
                     axum::http::StatusCode::UNAUTHORIZED,
                     Json(serde_json::json!({"error": "incorrect password"})),
@@ -695,13 +723,17 @@ pub async fn share_s3_credentials(
         _ => one_hour,
     };
 
-    let encrypted_secret = match crate::crypto::encrypt_secret(&state.config.session_secret, &secret_key) {
-        Ok(v) => v,
-        Err(e) => return (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": format!("failed to store credentials: {e}")})),
-        ).into_response(),
-    };
+    let encrypted_secret =
+        match crate::crypto::encrypt_secret(&state.config.session_secret, &secret_key) {
+            Ok(v) => v,
+            Err(e) => {
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("failed to store credentials: {e}")})),
+                )
+                    .into_response();
+            }
+        };
 
     if let Err(e) = sqlx::query(
         "INSERT INTO s3_share_credentials (id, share_id, access_key, secret_key, created_at, expires_at) \
@@ -783,11 +815,11 @@ fn reject_if_download_disallowed(allow_download: bool) -> Option<axum::response:
     })
 }
 
-fn extract_ip(headers: &axum::http::HeaderMap) -> Option<&str> {
-    headers
-        .get("x-forwarded-for")
-        .or_else(|| headers.get("x-real-ip"))
-        .and_then(|v| v.to_str().ok())
+/// Resolve the client IP for audit logging, honoring the configured trusted-proxy
+/// depth so an unauthenticated caller cannot forge arbitrary `X-Forwarded-For`
+/// entries into the share access log. Returns `None` when no proxy is trusted.
+fn extract_ip(headers: &axum::http::HeaderMap, trusted_proxy_depth: u8) -> Option<String> {
+    crate::auth::client_ip(headers, trusted_proxy_depth)
 }
 
 fn extract_user_agent(headers: &axum::http::HeaderMap) -> Option<&str> {

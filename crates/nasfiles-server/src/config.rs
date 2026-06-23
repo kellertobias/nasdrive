@@ -866,6 +866,8 @@ mod tests {
             max_upload_request_size: 0,
             trusted_proxy_depth: 1,
             log_level: "".into(),
+            custom_links: Vec::new(),
+            sftp_public_port: None,
         };
 
         let admin_perms = compute_folder_permissions(&config, &[String::from("admin")]);

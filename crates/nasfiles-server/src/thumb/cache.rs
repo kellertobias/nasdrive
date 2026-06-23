@@ -547,6 +547,8 @@ mod tests {
             max_upload_request_size: 0,
             log_level: String::new(),
             trusted_proxy_depth: 1,
+            custom_links: Vec::new(),
+            sftp_public_port: None,
         }
     }
 }

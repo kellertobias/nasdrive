@@ -300,7 +300,7 @@ pub async fn login(
     require_local_mode(&state)?;
     require_local_auth_header(&headers)?;
     let normalized = normalize_username(&body.username);
-    let ip = client_ip(&headers, state.config.trusted_proxy_depth);
+    let ip = crate::auth::client_ip(&headers, state.config.trusted_proxy_depth);
 
     if is_login_rate_limited(&state.pool, &normalized).await
         || is_login_rate_limited_by_ip(&state.pool, ip.as_deref()).await
@@ -418,7 +418,14 @@ pub async fn login(
 
     let user = row.into_auth_user();
     finish_login(&state, &session, user).await?;
-    record_attempt(&state.pool, &normalized, ip.as_deref(), true, Some("password")).await;
+    record_attempt(
+        &state.pool,
+        &normalized,
+        ip.as_deref(),
+        true,
+        Some("password"),
+    )
+    .await;
     Ok(Json(json!({"ok": true, "requires_totp": false})))
 }
 
@@ -1274,6 +1281,40 @@ fn build_totp(secret: &[u8], username: &str) -> Result<TOTP, Response> {
     })
 }
 
+/// Find the TOTP step counter that `code` matches within the accepted skew
+/// window, or `None` if it doesn't match.
+///
+/// The replay guard records the matched counter so a given physical code is
+/// usable exactly once. Recording the *wall-clock* step instead (as the earlier
+/// code did) let a code valid for the next window be accepted early — recording
+/// the current, lower step — and then replayed once real time advanced into that
+/// window. Counters are scanned high-to-low so a code maps to a single counter
+/// even at a window boundary. The comparison is constant-time.
+fn matched_totp_step(totp: &TOTP, code: &str) -> Option<i64> {
+    matched_totp_step_at(totp, code, chrono::Utc::now().timestamp())
+}
+
+fn matched_totp_step_at(totp: &TOTP, code: &str, now_secs: i64) -> Option<i64> {
+    if now_secs < 0 {
+        return None;
+    }
+    let step = totp.step.max(1);
+    let base = now_secs as u64 / step;
+    let skew = totp.skew as u64;
+    let lowest = base.saturating_sub(skew);
+    let mut counter = base.saturating_add(skew);
+    loop {
+        let candidate = totp.generate(counter.saturating_mul(step));
+        if bool::from(candidate.as_bytes().ct_eq(code.as_bytes())) {
+            return i64::try_from(counter).ok();
+        }
+        if counter <= lowest {
+            return None;
+        }
+        counter -= 1;
+    }
+}
+
 async fn verify_user_totp(state: &AppState, user_id: &str, code: &str) -> Result<bool, Response> {
     let row = sqlx::query("SELECT u.username, t.secret_enc FROM local_totp t JOIN users u ON u.id = t.user_id WHERE t.user_id = $1")
         .bind(user_id)
@@ -1284,27 +1325,27 @@ async fn verify_user_totp(state: &AppState, user_id: &str, code: &str) -> Result
     let username: String = row.get("username");
     let secret_enc: String = row.get("secret_enc");
     let secret = decrypt_secret(&secret_enc, &state.config.session_secret)?;
-    let ok = build_totp(&secret, &username)?
-        .check_current(code)
-        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "invalid TOTP code"))?;
-    if ok {
-        // Prevent replay within the same 30-second window by atomically recording
-        // the current step. The UPDATE only succeeds if this step hasn't been used yet.
-        let step = current_totp_step();
-        let affected = sqlx::query(
-            "UPDATE local_totp SET last_used_step = $1 WHERE user_id = $2 AND (last_used_step IS NULL OR last_used_step < $1)",
-        )
-        .bind(step)
-        .bind(user_id)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_error)?
-        .rows_affected();
-        if affected == 0 {
-            return Ok(false);
-        }
+    let totp = build_totp(&secret, &username)?;
+    let Some(step) = matched_totp_step(&totp, code) else {
+        return Ok(false);
+    };
+    // Replay guard: atomically record the counter the code actually corresponds
+    // to (not the wall-clock step). The UPDATE only succeeds if this counter
+    // hasn't been used yet, so a code is accepted exactly once across its whole
+    // skew window.
+    let affected = sqlx::query(
+        "UPDATE local_totp SET last_used_step = $1 WHERE user_id = $2 AND (last_used_step IS NULL OR last_used_step < $1)",
+    )
+    .bind(step)
+    .bind(user_id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_error)?
+    .rows_affected();
+    if affected == 0 {
+        return Ok(false);
     }
-    Ok(ok)
+    Ok(true)
 }
 
 async fn create_trusted_device(
@@ -1395,28 +1436,26 @@ async fn verify_trusted_device(
         .map_err(internal_error)?;
     let secret_enc: String = row.get("secret_enc");
     let secret = decrypt_secret(&secret_enc, &state.config.session_secret)?;
-    let ok = build_totp(&secret, &username)?
-        .check_current(&proof.code)
-        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "invalid trusted device code"))?;
-    if ok {
-        // Prevent replay within the same 30-second window (atomic step check + last_used update).
-        let step = current_totp_step();
-        let affected = sqlx::query(
-            "UPDATE local_totp_trusted_devices SET last_used_at = $1, last_used_step = $2 WHERE id = $3 AND user_id = $4 AND (last_used_step IS NULL OR last_used_step < $2)",
-        )
-        .bind(now_ms())
-        .bind(step)
-        .bind(&proof.id)
-        .bind(user_id)
-        .execute(&state.pool)
-        .await
-        .map_err(internal_error)?
-        .rows_affected();
-        if affected == 0 {
-            return Ok(false);
-        }
+    let totp = build_totp(&secret, &username)?;
+    let Some(step) = matched_totp_step(&totp, &proof.code) else {
+        return Ok(false);
+    };
+    // Replay guard keyed on the matched counter (see verify_user_totp).
+    let affected = sqlx::query(
+        "UPDATE local_totp_trusted_devices SET last_used_at = $1, last_used_step = $2 WHERE id = $3 AND user_id = $4 AND (last_used_step IS NULL OR last_used_step < $2)",
+    )
+    .bind(now_ms())
+    .bind(step)
+    .bind(&proof.id)
+    .bind(user_id)
+    .execute(&state.pool)
+    .await
+    .map_err(internal_error)?
+    .rows_affected();
+    if affected == 0 {
+        return Ok(false);
     }
-    Ok(ok)
+    Ok(true)
 }
 
 fn trusted_device_hash(
@@ -1742,37 +1781,6 @@ async fn is_login_rate_limited_by_ip(pool: &AnyPool, ip: Option<&str>) -> bool {
         >= LOGIN_RATE_LIMIT_PER_IP
 }
 
-/// Extract client IP from proxy headers, respecting the configured proxy depth.
-///
-/// With depth=1 (default), we trust the rightmost `X-Forwarded-For` entry, which
-/// is appended by the nearest trusted proxy (e.g. Traefik) and cannot be spoofed
-/// by the client. With depth=0, headers are not trusted and `None` is returned.
-fn client_ip(headers: &HeaderMap, trusted_proxy_depth: u8) -> Option<String> {
-    if trusted_proxy_depth == 0 {
-        return None;
-    }
-    let depth = trusted_proxy_depth as usize;
-    // X-Forwarded-For: each proxy appends the connecting client's IP.
-    // With N trusted proxies, the real client IP is at index len-N (0-based).
-    if let Some(xff) = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-    {
-        let parts: Vec<&str> = xff.split(',').collect();
-        let idx = parts.len().saturating_sub(depth);
-        if let Some(ip) = parts.get(idx).map(|s| s.trim()).filter(|s| !s.is_empty()) {
-            return Some(ip.to_string());
-        }
-    }
-    // Fall back to X-Real-IP (set by nginx or explicit Traefik middleware).
-    headers
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(str::to_string)
-}
-
 async fn record_attempt(
     pool: &AnyPool,
     normalized: &str,
@@ -1795,10 +1803,6 @@ async fn record_attempt(
     .bind(reason)
     .execute(pool)
     .await;
-}
-
-fn current_totp_step() -> i64 {
-    chrono::Utc::now().timestamp() / 30
 }
 
 fn normalize_username(username: &str) -> String {
@@ -1885,6 +1889,59 @@ mod tests {
         let hash = hash_password("correct horse battery").unwrap();
         assert!(verify_password(&hash, "correct horse battery"));
         assert!(!verify_password(&hash, "wrong"));
+    }
+
+    fn test_totp() -> TOTP {
+        // Same shape as build_totp: SHA1, 6 digits, skew=1, 30s step.
+        TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            b"12345678901234567890".to_vec(),
+            Some("nasfiles".to_string()),
+            "user".to_string(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn totp_match_records_the_codes_own_counter_not_wallclock_step() {
+        let totp = test_totp();
+        let now = 1_700_000_000i64;
+        let base = now as u64 / 30;
+        // A code valid for the NEXT window (base+1), submitted early while the
+        // wall clock is still in `base` (allowed by skew=1). The recorded step
+        // must be base+1 — the code's real counter — otherwise the same code is
+        // replayable once real time crosses into base+1.
+        let next_code = totp.generate((base + 1) * 30);
+        assert_eq!(
+            matched_totp_step_at(&totp, &next_code, now),
+            i64::try_from(base + 1).ok(),
+        );
+    }
+
+    #[test]
+    fn totp_match_reproduces_the_submitted_code() {
+        let totp = test_totp();
+        let now = 1_700_000_000i64;
+        let base = now as u64 / 30;
+        let code = totp.generate(base * 30);
+        let matched = matched_totp_step_at(&totp, &code, now).expect("current code matches");
+        // The matched counter regenerates the exact submitted code, and lies
+        // within the accepted ±1 skew window.
+        assert_eq!(totp.generate(matched as u64 * 30), code);
+        assert!((matched - base as i64).abs() <= 1);
+    }
+
+    #[test]
+    fn totp_rejects_code_outside_skew_window() {
+        let totp = test_totp();
+        let now = 1_700_000_000i64;
+        let base = now as u64 / 30;
+        // A code five windows away is well outside ±1 skew and must not match.
+        let stale = totp.generate((base + 5) * 30);
+        assert_eq!(matched_totp_step_at(&totp, &stale, now), None);
     }
 
     #[test]
@@ -2043,6 +2100,8 @@ mod tests {
             max_upload_request_size: 0,
             log_level: String::new(),
             trusted_proxy_depth: 1,
+            custom_links: Vec::new(),
+            sftp_public_port: None,
         }
     }
 }

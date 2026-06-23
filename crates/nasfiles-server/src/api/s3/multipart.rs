@@ -103,10 +103,14 @@ pub async fn upload_part_inner(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "InternalError",
                 &e.to_string(),
-            )
+            );
         }
     };
 
+    let expected_sha = super::object::expected_payload_sha256(req.headers());
+    let mut hasher = expected_sha
+        .as_ref()
+        .map(|_| <sha2::Sha256 as sha2::Digest>::new());
     let mut body = req.into_body().into_data_stream();
     let mut written: u64 = 0;
 
@@ -122,6 +126,9 @@ pub async fn upload_part_inner(
                         "EntityTooLarge",
                         "part exceeds maximum size",
                     );
+                }
+                if let Some(h) = hasher.as_mut() {
+                    sha2::Digest::update(h, &data);
                 }
                 if let Err(e) = file.write_all(&data).await {
                     let _ = tokio::fs::remove_file(&part_path).await;
@@ -150,6 +157,19 @@ pub async fn upload_part_inner(
             "InternalError",
             &e.to_string(),
         );
+    }
+
+    // Reject the part if the body doesn't match the signed payload hash.
+    if let (Some(expected), Some(h)) = (&expected_sha, hasher) {
+        let actual = hex::encode(sha2::Digest::finalize(h));
+        if actual != *expected {
+            let _ = tokio::fs::remove_file(&part_path).await;
+            return xml_error(
+                StatusCode::BAD_REQUEST,
+                "XAmzContentSHA256Mismatch",
+                "the provided x-amz-content-sha256 does not match the computed hash of the request body",
+            );
+        }
     }
 
     let _ = sqlx::query(
@@ -225,7 +245,7 @@ pub async fn complete_multipart_upload_inner(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "InternalError",
                 &e.to_string(),
-            )
+            );
         }
     };
     part_files.sort();
@@ -246,7 +266,7 @@ pub async fn complete_multipart_upload_inner(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "InternalError",
                 &e.to_string(),
-            )
+            );
         }
     };
 
@@ -355,9 +375,16 @@ pub async fn list_parts_inner(
             .and_then(|n| n.strip_prefix("part-"))
             .and_then(|n| n.parse().ok())
             .unwrap_or(0);
-        let size = tokio::fs::metadata(path).await.map(|m| m.len()).unwrap_or(0);
+        let size = tokio::fs::metadata(path)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
         let etag = compute_etag(path).await;
-        parts.push(xml::PartInfo { part_number: num, size, etag });
+        parts.push(xml::PartInfo {
+            part_number: num,
+            size,
+            etag,
+        });
     }
 
     let body = xml::list_parts_xml(bucket, key, &q.upload_id, &parts);
