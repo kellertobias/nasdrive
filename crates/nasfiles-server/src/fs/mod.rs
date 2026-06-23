@@ -6,6 +6,7 @@ pub mod media_info;
 pub mod ops;
 pub mod preview;
 pub mod roots;
+pub mod search;
 pub mod stream;
 pub mod zip;
 

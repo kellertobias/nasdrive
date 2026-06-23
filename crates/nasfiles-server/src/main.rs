@@ -83,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Build app state
     let state = state::AppState::new(config, pool)?;
+    state.search.spawn_refresh_loop();
 
     // Spawn daily share audit background task
     if matches!(state.config.auth_mode, config::AuthMode::Sso) {
@@ -133,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
     let api_routes = Router::new()
         .route("/me", get(api::me::me))
         .route("/roots", get(api::files::list_roots))
+        .route("/search", get(api::files::search_files))
         .route("/transfer-jobs", get(api::files::list_transfer_jobs))
         .route(
             "/transfer-jobs/{job_id}/cancel",

@@ -1,6 +1,7 @@
 use crate::config::AppConfig;
 use crate::fs::file_jobs::FileJobStore;
 use crate::fs::preview::MediaPreviewService;
+use crate::fs::search::SearchService;
 use crate::shares::access::ShareRateLimiter;
 use crate::thumb::cache::ThumbnailCache;
 use sqlx::AnyPool;
@@ -16,12 +17,14 @@ pub struct AppState {
     pub thumb_cache: Option<ThumbnailCache>,
     pub media_preview: MediaPreviewService,
     pub file_jobs: FileJobStore,
+    pub search: SearchService,
     pub webauthn: Option<Arc<Webauthn>>,
 }
 
 impl AppState {
     pub fn new(config: AppConfig, pool: AnyPool) -> anyhow::Result<Self> {
         let webauthn = crate::auth::local::build_webauthn(&config)?.map(Arc::new);
+        let config = Arc::new(config);
         let thumb_cache = if config.no_server_side_execution {
             None
         } else {
@@ -33,7 +36,8 @@ impl AppState {
 
         Ok(Self {
             media_preview: MediaPreviewService::new(config.media_preview_max_concurrent_transcodes),
-            config: Arc::new(config),
+            search: SearchService::new(config.clone()),
+            config,
             pool: pool.clone(),
             rate_limiter: ShareRateLimiter::new(),
             thumb_cache,

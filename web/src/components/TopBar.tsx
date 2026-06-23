@@ -1,12 +1,12 @@
 import api from '../api/client';
-import type { TransferJob, UserInfo } from '../api/client';
+import type { SearchResult, TransferJob, UserInfo } from '../api/client';
 import { useViewStore } from '../state/view';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import type { CSSProperties } from 'react';
-import { Icon } from './Icon';
+import { FileIcon, Icon } from './Icon';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { formatFileSize } from '../lib/icons';
+import { formatDate, formatFileSize, getFileIcon } from '../lib/icons';
 import { AppLogo } from './AppLogo';
 import { transferProgressPercent } from '../lib/transferJobs';
 
@@ -55,8 +55,12 @@ export function TopBar({ user }: TopBarProps) {
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
   const [transferMenuOpen, setTransferMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
   const transferMenuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
   const seenFinishedJobs = useRef<Set<string>>(new Set());
   const buildDate = user?.build.date && user.build.date !== 'unknown'
     ? new Date(user.build.date).toLocaleString()
@@ -130,6 +134,35 @@ export function TopBar({ user }: TopBarProps) {
     },
   });
 
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [searchQuery]);
+
+  const searchEnabled = Boolean(user && debouncedSearchQuery.length >= 2);
+  const { data: searchData, isFetching: searchFetching, error: searchError } = useQuery({
+    queryKey: ['search', debouncedSearchQuery],
+    queryFn: () => api.search(debouncedSearchQuery, 50),
+    enabled: searchEnabled,
+    staleTime: 5_000,
+  });
+
+  const openSearchResult = (result: SearchResult) => {
+    const targetPath = result.entry.is_dir ? result.path : result.parent_path;
+    setSearchOpen(false);
+    if (!result.entry.is_dir) {
+      useViewStore.getState().select(result.path);
+    } else {
+      useViewStore.getState().clearSelection();
+    }
+    navigate({
+      to: '/r/$root/$',
+      params: { root: result.root, _splat: targetPath },
+    });
+  };
+
   // Close menu on click outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -138,6 +171,9 @@ export function TopBar({ user }: TopBarProps) {
       }
       if (transferMenuRef.current && !transferMenuRef.current.contains(e.target as Node)) {
         setTransferMenuOpen(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -206,6 +242,74 @@ export function TopBar({ user }: TopBarProps) {
       >
         <AppLogo size={26} wordmarkSize={16} compact />
       </button>
+
+      {user && (
+        <div ref={searchRef} style={{ position: 'relative', flex: '0 1 520px', minWidth: 220 }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-2)',
+            height: 34,
+            padding: '0 var(--space-3)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-bg-muted)',
+            color: 'var(--color-fg-muted)',
+          }}>
+            <Icon name="search" size={16} />
+            <input
+              value={searchQuery}
+              onFocus={() => setSearchOpen(true)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchOpen(false);
+                  e.currentTarget.blur();
+                }
+              }}
+              placeholder="Search files"
+              style={{
+                width: '100%',
+                minWidth: 0,
+                border: 'none',
+                outline: 'none',
+                background: 'transparent',
+                color: 'var(--color-fg)',
+                fontSize: 'var(--text-sm)',
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearchQuery('');
+                }}
+                title="Clear search"
+                aria-label="Clear search"
+                style={iconButtonStyle}
+              >
+                <Icon name="x" size={14} />
+              </button>
+            )}
+          </div>
+
+          {searchOpen && searchQuery.trim().length > 0 && (
+            <SearchResultsPanel
+              query={searchQuery.trim()}
+              results={searchData?.results ?? []}
+              indexReady={searchData?.index_ready ?? true}
+              liveComplete={searchData?.live_complete ?? true}
+              isLoading={searchFetching}
+              error={searchError}
+              onOpen={openSearchResult}
+            />
+          )}
+        </div>
+      )}
 
       <div style={{ flex: 1 }} />
 
@@ -507,6 +611,160 @@ export function TopBar({ user }: TopBarProps) {
   );
 }
 
+interface SearchResultsPanelProps {
+  query: string;
+  results: SearchResult[];
+  indexReady: boolean;
+  liveComplete: boolean;
+  isLoading: boolean;
+  error: unknown;
+  onOpen: (result: SearchResult) => void;
+}
+
+function SearchResultsPanel({
+  query,
+  results,
+  indexReady,
+  liveComplete,
+  isLoading,
+  error,
+  onOpen,
+}: SearchResultsPanelProps) {
+  const tooShort = query.length < 2;
+
+  return (
+    <div
+      role="listbox"
+      style={{
+        position: 'absolute',
+        top: 'calc(100% + var(--space-1))',
+        left: 0,
+        width: 560,
+        maxWidth: 'calc(100vw - 24px)',
+        maxHeight: 'min(520px, calc(100vh - 76px))',
+        overflowY: 'auto',
+        background: 'var(--color-bg)',
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-lg)',
+        padding: 'var(--space-2)',
+        zIndex: 70,
+      }}
+      className="fade-in"
+    >
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 'var(--space-3)',
+        padding: 'var(--space-2)',
+        borderBottom: '1px solid var(--color-border-muted)',
+        marginBottom: 'var(--space-1)',
+      }}>
+        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
+          Search results
+        </span>
+        {!tooShort && (isLoading || !indexReady || !liveComplete) && (
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-fg-subtle)' }}>
+            {isLoading ? 'Checking files' : !indexReady ? 'Index warming up' : 'Live check limited'}
+          </span>
+        )}
+      </div>
+
+      {tooShort && (
+        <SearchPanelMessage icon="search" text="Type at least 2 characters" />
+      )}
+      {!tooShort && Boolean(error) && (
+        <SearchPanelMessage icon="alertTriangle" text={error instanceof Error ? error.message : 'Search failed'} />
+      )}
+      {!tooShort && !error && !isLoading && results.length === 0 && (
+        <SearchPanelMessage icon="folderSearch" text="No matching files" />
+      )}
+
+      {!tooShort && results.map((result) => {
+        const icon = getFileIcon(result.entry);
+        const location = result.parent_path
+          ? `${result.root_display_name} / ${result.parent_path}`
+          : result.root_display_name;
+
+        return (
+          <button
+            key={`${result.root}:${result.path}`}
+            type="button"
+            role="option"
+            onClick={() => onOpen(result)}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '32px minmax(0, 1fr) auto',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              width: '100%',
+              padding: 'var(--space-2)',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              background: 'transparent',
+              color: 'var(--color-fg)',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            onMouseOver={(e) => e.currentTarget.style.background = 'var(--color-bg-muted)'}
+            onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            <FileIcon svg={icon.svg} color={icon.color} size={22} />
+            <span style={{ minWidth: 0 }}>
+              <span style={{
+                display: 'block',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: 'var(--text-sm)',
+                fontWeight: 500,
+              }}>
+                {result.entry.name}
+              </span>
+              <span style={{
+                display: 'block',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: 'var(--text-xs)',
+                color: 'var(--color-fg-subtle)',
+                marginTop: 2,
+              }}>
+                {location}
+              </span>
+            </span>
+            <span style={{
+              justifySelf: 'end',
+              color: 'var(--color-fg-subtle)',
+              fontSize: 'var(--text-xs)',
+              whiteSpace: 'nowrap',
+            }}>
+              {result.entry.is_dir ? formatDate(result.entry.modified_at) : formatFileSize(result.entry.size)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SearchPanelMessage({ icon, text }: { icon: 'search' | 'alertTriangle' | 'folderSearch'; text: string }) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 'var(--space-2)',
+      padding: 'var(--space-4)',
+      color: 'var(--color-fg-subtle)',
+      fontSize: 'var(--text-sm)',
+    }}>
+      <Icon name={icon} size={16} />
+      {text}
+    </div>
+  );
+}
+
 function TransferJobMenuItem({
   job,
   cancelling,
@@ -660,3 +918,17 @@ function jobActionButtonStyle(disabled: boolean): CSSProperties {
     opacity: disabled ? 0.6 : 1,
   };
 }
+
+const iconButtonStyle: CSSProperties = {
+  width: 22,
+  height: 22,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  borderRadius: 'var(--radius-sm)',
+  background: 'transparent',
+  color: 'var(--color-fg-muted)',
+  cursor: 'pointer',
+  padding: 0,
+};

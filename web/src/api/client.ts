@@ -253,6 +253,23 @@ export interface TreeListing {
   children: FileEntry[];
 }
 
+export interface SearchResult {
+  root: string;
+  root_display_name: string;
+  path: string;
+  parent_path: string;
+  entry: FileEntry;
+  source: 'index' | 'live';
+  score: number;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchResult[];
+  live_complete: boolean;
+  index_ready: boolean;
+}
+
 export interface TransferJob {
   id: string;
   operation: 'move' | 'copy' | 'delete';
@@ -364,6 +381,11 @@ export const api = {
 
   listTree: (root: string, path: string = '') =>
     apiFetch<TreeListing>(`/api/files/${encodeURIComponent(root)}/tree?path=${encodeURIComponent(path)}`),
+
+  search: (q: string, limit: number = 100) => {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    return apiFetch<SearchResponse>(`/api/search?${params.toString()}`);
+  },
 
   fileInfo: (root: string, path: string) =>
     apiFetch<FileEntry & { path: string }>(`/api/files/${encodeURIComponent(root)}/info?path=${encodeURIComponent(path)}`),

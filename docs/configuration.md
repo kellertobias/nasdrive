@@ -149,6 +149,15 @@ Admin and home-folder controls:
 
 Video thumbnails and media previews depend on `ffmpeg`/`ffprobe`. PDF thumbnails depend on `pdftoppm`.
 
+## Search
+
+| Variable | Default | Description |
+|---|---|---|
+| `SEARCH_MAX_RESULTS` | `100` | Maximum search results returned by one request. |
+| `SEARCH_LIVE_ENTRY_BUDGET` | `25000` | Maximum filesystem entries checked during the live search supplement. |
+| `SEARCH_LIVE_TIME_BUDGET_MS` | `1500` | Maximum time spent on the live search supplement per request. |
+| `SEARCH_REINDEX_INTERVAL_SECS` | `300` | Background metadata index refresh interval. |
+
 ## Shares
 
 | Variable | Default | Description |

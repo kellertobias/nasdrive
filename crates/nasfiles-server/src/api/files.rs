@@ -27,6 +27,27 @@ pub struct ListQuery {
 }
 
 #[derive(Deserialize)]
+pub struct SearchQuery {
+    #[serde(default)]
+    pub q: String,
+    pub limit: Option<usize>,
+}
+
+/// GET /api/search?q=... — search metadata across roots visible to the user.
+pub async fn search_files(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Query(query): Query<SearchQuery>,
+) -> impl IntoResponse {
+    Json(
+        state
+            .search
+            .search(&state, &user, &query.q, query.limit)
+            .await,
+    )
+}
+
+#[derive(Deserialize)]
 pub struct PreviewQuery {
     #[serde(default)]
     pub path: String,
@@ -329,6 +350,7 @@ pub async fn mkdir(
     Json(body): Json<ops::MkdirRequest>,
 ) -> Result<impl IntoResponse, ops::FileOpError> {
     ops::create_directory(&state, &user, &root_key, &body.path, &body.name).await?;
+    state.search.schedule_user_refresh(state.clone(), user);
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
@@ -340,6 +362,10 @@ pub async fn rename(
     Json(body): Json<ops::RenameRequest>,
 ) -> Result<impl IntoResponse, ops::FileOpError> {
     ops::rename_entry(&state, &user, &root_key, &body.path, &body.new_name).await?;
+    state
+        .search
+        .remove_paths_for_user(&user, &root_key, std::slice::from_ref(&body.path));
+    state.search.schedule_user_refresh(state.clone(), user);
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
@@ -351,6 +377,10 @@ pub async fn move_entries(
     Json(body): Json<ops::MoveRequest>,
 ) -> Result<impl IntoResponse, ops::FileOpError> {
     ops::move_entries(&state, &user, &root_key, &body.paths, &body.dest).await?;
+    state
+        .search
+        .remove_paths_for_user(&user, &root_key, &body.paths);
+    state.search.schedule_user_refresh(state.clone(), user);
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
@@ -452,6 +482,9 @@ pub async fn delete_entries(
         .file_jobs
         .create_delete_job(&user, &root_key, &body.paths)
         .await?;
+    state
+        .search
+        .remove_paths_for_user(&user, &root_key, &body.paths);
     file_jobs::spawn_file_job(state.clone(), job_id.clone());
     Ok(Json(serde_json::json!({"ok": true, "job_id": job_id})))
 }
@@ -491,6 +524,8 @@ pub async fn upload_file(
         count += 1;
     }
 
+    state.search.schedule_user_refresh(state.clone(), user);
+
     Ok(Json(
         serde_json::json!({"ok": true, "files_uploaded": count}),
     ))
@@ -504,6 +539,7 @@ pub async fn extract_archive(
     Json(body): Json<ExtractArchiveRequest>,
 ) -> Result<impl IntoResponse, archive::ArchiveError> {
     archive::extract_archive(&state, &user, &root_key, &body.path, body.mode).await?;
+    state.search.schedule_user_refresh(state.clone(), user);
     Ok(Json(serde_json::json!({"ok": true})))
 }
 

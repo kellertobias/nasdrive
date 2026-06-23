@@ -669,6 +669,9 @@ async fn run_file_job(state: &AppState, job_id: &str) -> Result<(), FileOpError>
                 .file_jobs
                 .set_status(job_id, FileJobStatus::Done, None, true)
                 .await?;
+            state
+                .search
+                .schedule_user_refresh(state.clone(), job.owner_user.clone());
             Ok(())
         }
         Err(FileOpError::Cancelled) => {

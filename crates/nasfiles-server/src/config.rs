@@ -65,6 +65,12 @@ pub struct AppConfig {
     pub thumbnail_max_concurrent_generations: usize,
     pub media_preview_max_concurrent_transcodes: usize,
 
+    // Search
+    pub search_max_results: usize,
+    pub search_live_entry_budget: usize,
+    pub search_live_time_budget_ms: u64,
+    pub search_reindex_interval_secs: u64,
+
     // Shares
     pub share_token_bytes: usize,
 
@@ -363,6 +369,27 @@ impl AppConfig {
                 .unwrap_or(2)
                 .max(1);
 
+        let search_max_results: usize = std::env::var("SEARCH_MAX_RESULTS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100)
+            .max(1);
+        let search_live_entry_budget: usize = std::env::var("SEARCH_LIVE_ENTRY_BUDGET")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(25_000)
+            .max(1);
+        let search_live_time_budget_ms: u64 = std::env::var("SEARCH_LIVE_TIME_BUDGET_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1_500)
+            .max(100);
+        let search_reindex_interval_secs: u64 = std::env::var("SEARCH_REINDEX_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(300)
+            .max(30);
+
         // Share token bytes. Clamp to a minimum of 16 bytes (128 bits) so an
         // operator cannot configure a dangerously short, brute-forceable token.
         let share_token_bytes: usize = std::env::var("SHARE_TOKEN_BYTES")
@@ -435,6 +462,10 @@ impl AppConfig {
             thumbnail_max_image_alloc,
             thumbnail_max_concurrent_generations,
             media_preview_max_concurrent_transcodes,
+            search_max_results,
+            search_live_entry_budget,
+            search_live_time_budget_ms,
+            search_reindex_interval_secs,
             share_token_bytes,
             sftp_enabled,
             sftp_bind_addr,
@@ -769,6 +800,10 @@ mod tests {
             thumbnail_max_image_alloc: 0,
             thumbnail_max_concurrent_generations: 1,
             media_preview_max_concurrent_transcodes: 1,
+            search_max_results: 100,
+            search_live_entry_budget: 25_000,
+            search_live_time_budget_ms: 1_500,
+            search_reindex_interval_secs: 300,
             share_token_bytes: 24,
             sftp_enabled: false,
             sftp_bind_addr: String::new(),
