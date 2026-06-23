@@ -95,7 +95,7 @@ export function ShareDialog({
       const resp = await api.createShare(root, path, {
         target_kind: targetKind,
         password: targetKind === "guest" ? password : undefined,
-        allow_download: allowDownload,
+        allow_download: isDirectory ? allowDownload : true,
         allow_upload: allowUpload,
         expires_in: expiresIn,
       });
@@ -330,6 +330,7 @@ export function ShareDialog({
                 gap: "var(--space-2)",
               }}
             >
+              {isDirectory && (
               <label
                 style={{
                   display: "flex",
@@ -346,6 +347,7 @@ export function ShareDialog({
                 />
                 Allow download
               </label>
+              )}
               {isDirectory && (
                 <label
                   style={{
