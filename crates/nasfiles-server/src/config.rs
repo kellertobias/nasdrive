@@ -30,6 +30,9 @@ pub struct AppConfig {
     // Used purely to organize the sidebar; access is still per-folder.
     pub share_group_of_folder: HashMap<String, String>,
 
+    // Custom links shown at the bottom of the sidebar (from CUSTOM_LINKS).
+    pub custom_links: Vec<CustomLink>,
+
     // SSO — OIDC
     pub oidc: Option<OidcConfig>,
 
@@ -78,6 +81,9 @@ pub struct AppConfig {
     pub sftp_enabled: bool,
     pub sftp_bind_addr: String,
     pub sftp_host_key_path: PathBuf,
+    /// Override for the public-facing SFTP port (for NAT scenarios).
+    /// Defaults to the port in `sftp_bind_addr`.
+    pub sftp_public_port: Option<u16>,
 
     // Upload limits
     pub max_upload_file_size: u64,
@@ -136,6 +142,15 @@ pub struct DevUserConfig {
     pub username: String,
     pub display_name: String,
     pub groups: Vec<String>,
+}
+
+/// A custom link pinned to the bottom of the sidebar (from `CUSTOM_LINKS`).
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct CustomLink {
+    pub icon: String,
+    pub icon_color: String,
+    pub name: String,
+    pub url: String,
 }
 
 impl AppConfig {
@@ -406,6 +421,9 @@ impl AppConfig {
         let sftp_host_key_path = std::env::var("SFTP_HOST_KEY_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| data_dir.join("sftp_host_key"));
+        let sftp_public_port: Option<u16> = std::env::var("SFTP_PUBLIC_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok());
 
         // Upload limits (default: 10 GB per file, 50 GB per request)
         let max_upload_file_size: u64 = std::env::var("MAX_UPLOAD_FILE_SIZE")
@@ -426,6 +444,13 @@ impl AppConfig {
         // Log level
         let log_level = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
 
+        // CUSTOM_LINKS — JSON array of { icon, icon_color, name, url }
+        let custom_links: Vec<CustomLink> = match std::env::var("CUSTOM_LINKS") {
+            Ok(json) if !json.trim().is_empty() => serde_json::from_str(&json)
+                .map_err(|e| anyhow::anyhow!("invalid CUSTOM_LINKS JSON: {e}"))?,
+            _ => Vec::new(),
+        };
+
         Ok(AppConfig {
             bind_addr,
             base_url,
@@ -440,6 +465,7 @@ impl AppConfig {
             common_folders,
             home_folder_root,
             share_group_of_folder,
+            custom_links,
             oidc,
             sso_username_claim,
             sso_display_name_claim,
@@ -470,11 +496,39 @@ impl AppConfig {
             sftp_enabled,
             sftp_bind_addr,
             sftp_host_key_path,
+            sftp_public_port,
             max_upload_file_size,
             max_upload_request_size,
             trusted_proxy_depth,
             log_level,
         })
+    }
+
+    /// Extract just the hostname from BASE_URL (no port, no scheme).
+    pub fn public_hostname(&self) -> Option<String> {
+        let url = &self.base_url;
+        let after_scheme = url.find("://")?;
+        let rest = &url[after_scheme + 3..];
+        let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let host_port = &rest[..host_end];
+        if !host_port.starts_with('[') {
+            if let Some(pos) = host_port.rfind(':') {
+                return Some(host_port[..pos].to_string());
+            }
+        }
+        Some(host_port.to_string())
+    }
+
+    /// Effective public SFTP port: explicit override, or port from SFTP_BIND_ADDR.
+    pub fn effective_sftp_port(&self) -> u16 {
+        if let Some(p) = self.sftp_public_port {
+            return p;
+        }
+        self.sftp_bind_addr
+            .rsplit(':')
+            .next()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(2222)
     }
 }
 

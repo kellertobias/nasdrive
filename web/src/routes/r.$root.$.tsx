@@ -157,6 +157,8 @@ function FileBrowser() {
     queryKey: ['listing', root, path],
     queryFn: () => api.listDirectory(root, path),
     staleTime: 10_000,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: transferJobData } = useQuery({
@@ -642,6 +644,7 @@ function FileBrowser() {
                 activePath={path}
                 onDropFiles={handleFileDrop}
                 transferJobs={activeTransferJobs}
+                customLinks={user.custom_links}
                 onNavigate={(rootKey, folderPath) => {
                   navigate({
                     to: '/r/$root/$',

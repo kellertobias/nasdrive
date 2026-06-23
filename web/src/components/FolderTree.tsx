@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../api/client';
-import type { Root, FileEntry } from '../api/client';
+import type { Root, FileEntry, CustomLink } from '../api/client';
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './Icon';
+import { ICONS } from '../lib/icons';
 import { hasNasfilesDrag, isDemoDraggedPath, isDemoDropTarget } from '../lib/fileDrag';
 import { useGlobalDragCleanup } from '../lib/dragState';
 import { UsageRing } from './UsageRing';
@@ -17,6 +18,7 @@ interface FolderTreeProps {
   onNavigate: (root: string, path: string) => void;
   onDropFiles?: (targetRoot: string, targetPath: string, e: React.DragEvent) => void;
   transferJobs?: TransferJob[];
+  customLinks?: CustomLink[];
 }
 
 interface ShareGroup {
@@ -47,7 +49,7 @@ function partitionRoots(roots: Root[]): { ungrouped: Root[]; groups: ShareGroup[
   return { ungrouped, groups };
 }
 
-export function FolderTree({ roots, activeRoot, activePath, onNavigate, onDropFiles, transferJobs = [] }: FolderTreeProps) {
+export function FolderTree({ roots, activeRoot, activePath, onNavigate, onDropFiles, transferJobs = [], customLinks = [] }: FolderTreeProps) {
   const { ungrouped, groups } = partitionRoots(roots);
   const renderRoot = (root: Root) => (
     <TreeRoot
@@ -76,6 +78,13 @@ export function FolderTree({ roots, activeRoot, activePath, onNavigate, onDropFi
           transferJobs={transferJobs}
         />
       ))}
+      {customLinks.length > 0 && (
+        <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-2)', borderTop: '1px solid var(--color-border)' }}>
+          {customLinks.map((link) => (
+            <CustomLinkItem key={link.url} link={link} />
+          ))}
+        </div>
+      )}
     </nav>
   );
 }
@@ -365,6 +374,46 @@ interface TreeNodeProps {
   onDropFiles?: (targetRoot: string, targetPath: string, e: React.DragEvent) => void;
   transferJobs: TransferJob[];
   depth: number;
+}
+
+function CustomLinkItem({ link }: { link: CustomLink }) {
+  const iconName = link.icon in ICONS ? link.icon as keyof typeof ICONS : 'link';
+  return (
+    <a
+      href={link.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={link.name}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-2)',
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        padding: 'var(--space-1-5) var(--space-4)',
+        color: 'var(--color-sidebar-fg)',
+        fontSize: 'var(--text-sm)',
+        fontWeight: 400,
+        textDecoration: 'none',
+        borderRadius: 0,
+        transition: `background var(--duration-fast) var(--ease-out)`,
+      }}
+      onMouseOver={(e) => { e.currentTarget.style.background = 'var(--color-sidebar-hover)'; }}
+      onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; }}
+    >
+      <Icon name={iconName} size={16} color={link.icon_color || 'var(--color-fg-muted)'} />
+      <span style={{
+        flex: 1,
+        minWidth: 0,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}>
+        {link.name}
+      </span>
+    </a>
+  );
 }
 
 function TreeNode({ rootKey, entry, parentPath, activePath, onNavigate, onDropFiles, transferJobs, depth }: TreeNodeProps) {

@@ -101,6 +101,13 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
 
 // ---- API types ----
 
+export interface CustomLink {
+  icon: string;
+  icon_color: string;
+  name: string;
+  url: string;
+}
+
 export interface UserInfo {
   user_id: string;
   username: string;
@@ -108,6 +115,7 @@ export interface UserInfo {
   picture_url: string | null;
   is_admin: boolean;
   roots: Root[];
+  custom_links: CustomLink[];
   auth: AuthInfo;
   capabilities: ServerCapabilities;
   build: BuildInfo;
