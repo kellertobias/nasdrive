@@ -252,17 +252,17 @@ pub async fn put_object_inner(
         Err(e) => return e.into_response(),
     };
 
-    let file_path = match nasfiles_core::safe_path::resolve(&base_path, key) {
-        Ok(p) => p,
-        Err(_) => return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key"),
-    };
-
-    let filename = match file_path.file_name().and_then(|n| n.to_str()) {
-        Some(n) => n.to_string(),
-        None => return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key"),
-    };
-
-    if let Some(parent) = file_path.parent() {
+    // Pre-validate key before touching the filesystem. resolve_parent does the
+    // full security check, but it requires the parent directory to exist first,
+    // so we create it — safely, only after ruling out traversal sequences.
+    if key.contains('\0')
+        || key.starts_with('/')
+        || key.starts_with('\\')
+        || key.split('/').any(|c| c == "..")
+    {
+        return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key");
+    }
+    if let Some(parent) = base_path.join(key).parent() {
         if !parent.exists() {
             if let Err(e) = tokio::fs::create_dir_all(parent).await {
                 return xml_error(
@@ -273,6 +273,18 @@ pub async fn put_object_inner(
             }
         }
     }
+
+    // resolve_parent validates root containment, rejects symlinks at the final
+    // component, and succeeds even when the target file does not yet exist.
+    let file_path = match nasfiles_core::safe_path::resolve_parent(&base_path, key) {
+        Ok(p) => p,
+        Err(_) => return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key"),
+    };
+
+    let filename = match file_path.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n.to_string(),
+        None => return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key"),
+    };
 
     let max_size = state.config.max_upload_file_size;
     let temp_path = file_path

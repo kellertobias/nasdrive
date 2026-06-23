@@ -192,12 +192,17 @@ pub async fn complete_multipart_upload_inner(
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
-    let file_path = match nasfiles_core::safe_path::resolve(&base_path, key) {
-        Ok(p) => p,
-        Err(_) => return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key"),
-    };
-
-    if let Some(parent) = file_path.parent() {
+    // Same create-then-validate pattern as put_object_inner: pre-check for
+    // traversal sequences, create parent dirs, then let resolve_parent do the
+    // full security check (containment + symlink guard at the final component).
+    if key.contains('\0')
+        || key.starts_with('/')
+        || key.starts_with('\\')
+        || key.split('/').any(|c| c == "..")
+    {
+        return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key");
+    }
+    if let Some(parent) = base_path.join(key).parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
             return xml_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -206,6 +211,11 @@ pub async fn complete_multipart_upload_inner(
             );
         }
     }
+
+    let file_path = match nasfiles_core::safe_path::resolve_parent(&base_path, key) {
+        Ok(p) => p,
+        Err(_) => return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key"),
+    };
 
     let stage = stage_dir(state, &q.upload_id);
     let mut part_files = match collect_parts(&stage).await {
