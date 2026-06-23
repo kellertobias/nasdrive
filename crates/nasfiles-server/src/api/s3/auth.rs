@@ -43,6 +43,7 @@ pub enum S3AuthError {
     InvalidCredentials,
     SignatureDoesNotMatch,
     ExpiredCredential,
+    RequestTimeTooSkewed,
     AccessDenied,
     NoSuchBucket,
     Internal(String),
@@ -56,6 +57,7 @@ impl S3AuthError {
                 "SignatureDoesNotMatch"
             }
             S3AuthError::ExpiredCredential => "ExpiredToken",
+            S3AuthError::RequestTimeTooSkewed => "RequestTimeTooSkewed",
             S3AuthError::AccessDenied => "AccessDenied",
             S3AuthError::NoSuchBucket => "NoSuchBucket",
             S3AuthError::Internal(_) => "InternalError",
@@ -67,6 +69,7 @@ impl S3AuthError {
             S3AuthError::MissingCredentials
             | S3AuthError::InvalidCredentials
             | S3AuthError::SignatureDoesNotMatch
+            | S3AuthError::RequestTimeTooSkewed
             | S3AuthError::ExpiredCredential
             | S3AuthError::AccessDenied => StatusCode::FORBIDDEN,
             S3AuthError::NoSuchBucket => StatusCode::NOT_FOUND,
@@ -154,6 +157,13 @@ async fn verify_header_auth(
         .get("x-amz-date")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+
+    // Reject requests with a timestamp more than 15 minutes off (replay attack prevention).
+    let issued_secs = parse_datetime_secs(datetime).ok_or(S3AuthError::MissingCredentials)?;
+    if (chrono::Utc::now().timestamp() - issued_secs).unsigned_abs() > 900 {
+        return Err(S3AuthError::RequestTimeTooSkewed);
+    }
+
     let payload_hash = parts
         .headers
         .get("x-amz-content-sha256")
@@ -271,9 +281,11 @@ pub async fn lookup_credential(
         if row.expires_at.is_some_and(|exp| now > exp) {
             return Err(S3AuthError::ExpiredCredential);
         }
+        let secret_key = crate::crypto::decrypt_secret(&config.session_secret, &row.secret_key)
+            .map_err(|e| S3AuthError::Internal(format!("failed to decrypt token: {e}")))?;
         let user = load_user(pool, config, &row.user_id).await?;
         return Ok((
-            row.secret_key,
+            secret_key,
             S3Principal::UserToken {
                 user_id: row.user_id,
                 user,
@@ -310,8 +322,10 @@ pub async fn lookup_credential(
         if share.expires_at.is_some_and(|exp| now > exp) {
             return Err(S3AuthError::ExpiredCredential);
         }
+        let secret_key = crate::crypto::decrypt_secret(&config.session_secret, &row.secret_key)
+            .map_err(|e| S3AuthError::Internal(format!("failed to decrypt credential: {e}")))?;
         return Ok((
-            row.secret_key,
+            secret_key,
             S3Principal::ShareCredential {
                 share,
                 cred_id: row.id,

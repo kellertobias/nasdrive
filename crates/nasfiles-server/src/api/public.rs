@@ -695,6 +695,14 @@ pub async fn share_s3_credentials(
         _ => one_hour,
     };
 
+    let encrypted_secret = match crate::crypto::encrypt_secret(&state.config.session_secret, &secret_key) {
+        Ok(v) => v,
+        Err(e) => return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("failed to store credentials: {e}")})),
+        ).into_response(),
+    };
+
     if let Err(e) = sqlx::query(
         "INSERT INTO s3_share_credentials (id, share_id, access_key, secret_key, created_at, expires_at) \
          VALUES ($1, $2, $3, $4, $5, $6)",
@@ -702,7 +710,7 @@ pub async fn share_s3_credentials(
     .bind(&id)
     .bind(&share.id)
     .bind(&access_key)
-    .bind(&secret_key)
+    .bind(&encrypted_secret)
     .bind(now)
     .bind(expires_at)
     .execute(&state.pool)

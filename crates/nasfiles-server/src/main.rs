@@ -3,6 +3,7 @@ mod assets;
 mod auth;
 mod blocklist;
 mod config;
+mod crypto;
 mod db;
 mod fs;
 mod sftp;

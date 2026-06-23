@@ -83,15 +83,18 @@ those headers.
 
 ## S3 API credential storage
 
-S3 secret keys (both personal API tokens and share credentials) are stored **plaintext** in the database. This is a deliberate trade-off: AWS Signature Version 4 (SigV4) authentication works by having the server independently compute the same HMAC-SHA256 signature as the client and compare them. That computation requires the raw secret key, so it cannot be hashed at rest the way user passwords are.
+S3 secret keys (both personal API tokens and share credentials) are stored **encrypted** in the database using AES-256-GCM with a per-value random nonce. The encryption key is derived from `SESSION_SECRET`. AWS Signature Version 4 (SigV4) authentication requires the raw secret key for HMAC re-computation, so the keys cannot be hashed the way user passwords are — encryption is the next-best protection.
 
-**Consequence:** database read access (via a compromised `DB_URL`, a leaked backup, or direct file access to the SQLite file) exposes S3 secret keys. Protect the database with appropriate file-system permissions and ensure backups are encrypted.
+**Consequence:** the encrypted secrets are only as safe as `SESSION_SECRET`. If both the database and the session secret are compromised, the S3 secrets are exposed. Protect both with appropriate file-system permissions, and ensure backups of each are encrypted and stored separately.
 
-**Mitigations already in place:**
-- Access keys and secret keys use the same random-byte generation as share tokens (cryptographically random, URL-safe).
+**Protections in place:**
+- Secret keys are encrypted at rest; the database alone is not sufficient to recover them.
+- Access keys and secret keys use cryptographically random generation (same as share tokens).
 - Personal API tokens record `last_used_at`, making silent credential theft visible in the profile page.
 - Users can revoke tokens from the profile page at any time; revoked tokens are rejected immediately.
 - Share credentials are short-lived (maximum one hour) and are invalidated if the underlying share is revoked.
+- Header-based SigV4 authentication rejects requests whose timestamp differs from server time by more than 15 minutes, preventing replay attacks.
+- Presigned URLs carry an explicit `X-Amz-Expires` value and are rejected once that window passes.
 
 ## S3 permissions are re-checked on every request
 
