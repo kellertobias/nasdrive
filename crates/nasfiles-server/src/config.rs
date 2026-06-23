@@ -511,10 +511,10 @@ impl AppConfig {
         let rest = &url[after_scheme + 3..];
         let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
         let host_port = &rest[..host_end];
-        if !host_port.starts_with('[') {
-            if let Some(pos) = host_port.rfind(':') {
-                return Some(host_port[..pos].to_string());
-            }
+        if !host_port.starts_with('[')
+            && let Some(pos) = host_port.rfind(':')
+        {
+            return Some(host_port[..pos].to_string());
         }
         Some(host_port.to_string())
     }

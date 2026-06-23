@@ -1,5 +1,5 @@
 use aes_gcm::{
-    Aes256Gcm, Key,
+    Aes256Gcm,
     aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
@@ -8,8 +8,8 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 /// The encryption key is derived from the first 32 bytes of `session_secret`.
 /// Returns base64url(nonce[12] || ciphertext).
 pub fn encrypt_secret(session_secret: &[u8], plaintext: &str) -> Result<String, String> {
-    let key = Key::<Aes256Gcm>::from_slice(&session_secret[..32]);
-    let cipher = Aes256Gcm::new(key);
+    let cipher = Aes256Gcm::new_from_slice(&session_secret[..32])
+        .map_err(|_| "session_secret must be >= 32 bytes".to_string())?;
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
     let ciphertext = cipher
@@ -30,12 +30,12 @@ pub fn decrypt_secret(session_secret: &[u8], ciphertext_b64: &str) -> Result<Str
         return Err("invalid encrypted secret".into());
     }
 
-    let key = Key::<Aes256Gcm>::from_slice(&session_secret[..32]);
-    let cipher = Aes256Gcm::new(key);
-    let nonce = aes_gcm::Nonce::from_slice(&combined[..12]);
+    let cipher = Aes256Gcm::new_from_slice(&session_secret[..32])
+        .map_err(|_| "session_secret must be >= 32 bytes".to_string())?;
 
+    let nonce_arr: [u8; 12] = combined[..12].try_into().expect("nonce must be 12 bytes");
     let plaintext = cipher
-        .decrypt(nonce, &combined[12..])
+        .decrypt(&nonce_arr.into(), &combined[12..])
         .map_err(|e| format!("decryption error: {e}"))?;
 
     String::from_utf8(plaintext).map_err(|e| format!("utf8 error: {e}"))

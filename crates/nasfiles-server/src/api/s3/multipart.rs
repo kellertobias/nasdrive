@@ -222,14 +222,14 @@ pub async fn complete_multipart_upload_inner(
     {
         return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key");
     }
-    if let Some(parent) = base_path.join(key).parent() {
-        if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            return xml_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "InternalError",
-                &e.to_string(),
-            );
-        }
+    if let Some(parent) = base_path.join(key).parent()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        return xml_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "InternalError",
+            &e.to_string(),
+        );
     }
 
     let file_path = match nasfiles_core::safe_path::resolve_parent(&base_path, key) {
@@ -396,8 +396,6 @@ pub async fn list_parts_inner(
 #[derive(sqlx::FromRow)]
 pub struct UploadRow {
     pub upload_id: String,
-    pub bucket: String,
-    pub key: String,
     pub principal: String,
 }
 
@@ -408,7 +406,7 @@ async fn get_upload(
     key: &str,
 ) -> Option<UploadRow> {
     sqlx::query_as::<_, UploadRow>(
-        "SELECT upload_id, bucket, key, principal FROM s3_multipart_uploads \
+        "SELECT upload_id, principal FROM s3_multipart_uploads \
          WHERE upload_id = $1 AND bucket = $2 AND key = $3",
     )
     .bind(upload_id)
@@ -456,7 +454,7 @@ pub async fn cleanup_abandoned(state: AppState) {
     let cutoff = chrono::Utc::now().timestamp_millis() - 24 * 60 * 60 * 1000;
 
     let rows = sqlx::query_as::<_, UploadRow>(
-        "SELECT upload_id, bucket, key, principal FROM s3_multipart_uploads WHERE created_at < $1",
+        "SELECT upload_id, principal FROM s3_multipart_uploads WHERE created_at < $1",
     )
     .bind(cutoff)
     .fetch_all(&state.pool)

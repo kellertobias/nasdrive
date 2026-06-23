@@ -284,16 +284,15 @@ pub async fn put_object_inner(
     {
         return xml_error(StatusCode::BAD_REQUEST, "InvalidArgument", "invalid key");
     }
-    if let Some(parent) = base_path.join(key).parent() {
-        if !parent.exists() {
-            if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                return xml_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "InternalError",
-                    &e.to_string(),
-                );
-            }
-        }
+    if let Some(parent) = base_path.join(key).parent()
+        && !parent.exists()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        return xml_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "InternalError",
+            &e.to_string(),
+        );
     }
 
     // resolve_parent validates root containment, rejects symlinks at the final

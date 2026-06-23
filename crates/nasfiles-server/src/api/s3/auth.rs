@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 use crate::{config::AppConfig, shares::model::Share, state::AppState};
 
-pub const S3_REGION: &str = "us-east-1";
 pub const S3_SERVICE: &str = "s3";
 
 /// The verified identity behind an S3 request.
@@ -19,22 +18,6 @@ pub enum S3Principal {
     UserToken { user_id: String, user: AuthUser },
     /// A temporary credential issued via share + optional password exchange.
     ShareCredential { share: Share, cred_id: String },
-}
-
-impl S3Principal {
-    pub fn owner_id(&self) -> &str {
-        match self {
-            S3Principal::UserToken { user_id, .. } => user_id,
-            S3Principal::ShareCredential { cred_id, .. } => cred_id,
-        }
-    }
-
-    pub fn display_name(&self) -> &str {
-        match self {
-            S3Principal::UserToken { user, .. } => &user.display_name,
-            S3Principal::ShareCredential { .. } => "share",
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -410,9 +393,7 @@ fn parse_query_params(query: &str) -> HashMap<String, String> {
         .collect()
 }
 
-fn extract_presigned_access_key<'a>(
-    params: &'a HashMap<String, String>,
-) -> Result<&'a str, S3AuthError> {
+fn extract_presigned_access_key(params: &HashMap<String, String>) -> Result<&str, S3AuthError> {
     let cred = params
         .get("X-Amz-Credential")
         .or_else(|| params.get("x-amz-credential"))
