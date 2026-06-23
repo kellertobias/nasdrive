@@ -260,6 +260,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/sftp-temp-users", post(sftp::api::create_temp_user))
         .route("/admin/sftp-access-log", get(sftp::api::list_access_log))
         .route(
+            "/admin/sftp-sessions",
+            get(sftp::api::list_active_sessions),
+        )
+        .route(
             "/admin/sftp-temp-users/{id}/extend",
             post(sftp::api::extend_temp_user),
         )

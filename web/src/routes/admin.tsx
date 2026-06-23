@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import api, {
+	type ActiveSftpSession,
 	type AdminUserDetails,
 	type FolderCaps,
 	type IpBlocklistEntry,
@@ -50,6 +51,7 @@ type Tab =
 	| "access-log"
 	| "users"
 	| "sftp"
+	| "sftp-connections"
 	| "sftp-log"
 	| "blocklist";
 
@@ -98,6 +100,7 @@ function AdminDashboard() {
 		{ key: "access-log", label: "Access Log" },
 		{ key: "users", label: "Users" },
 		{ key: "sftp", label: "SFTP Guests" },
+		{ key: "sftp-connections", label: "Active Connections" },
 		{ key: "sftp-log", label: "SFTP Log" },
 		{ key: "blocklist", label: "IP Blocklist" },
 	];
@@ -207,6 +210,7 @@ function AdminDashboard() {
 					{tab === "access-log" && <AccessLogTab />}
 					{tab === "users" && <UsersTab />}
 					{tab === "sftp" && <SftpGuestsTab />}
+					{tab === "sftp-connections" && <SftpConnectionsTab />}
 					{tab === "sftp-log" && <SftpAccessLogTab />}
 					{tab === "blocklist" && <BlocklistTab />}
 				</div>
@@ -480,6 +484,70 @@ function BlockIpButton({ ip, reason }: { ip: string; reason: string }) {
 			<Icon name={blocked ? "checkCircle" : "alertTriangle"} size={14} />
 			{blocked ? "Blocked" : "Block"}
 		</button>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// SFTP active connections tab
+// ---------------------------------------------------------------------------
+
+function formatBytes(bytes: number): string {
+	if (bytes === 0) return "0 B";
+	const units = ["B", "KB", "MB", "GB", "TB"];
+	const i = Math.floor(Math.log(bytes) / Math.log(1024));
+	return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function SftpConnectionsTab() {
+	const { data, isLoading } = useQuery({
+		queryKey: ["admin-sftp-sessions"],
+		queryFn: api.listActiveSftpSessions,
+		staleTime: 3_000,
+		refetchInterval: 5_000,
+	});
+
+	const sessions: ActiveSftpSession[] = data?.sessions ?? [];
+
+	if (isLoading) return <LoadingRows />;
+
+	if (sessions.length === 0) {
+		return <EmptyMessage text="No SFTP guests currently connected" />;
+	}
+
+	return (
+		<table style={tableStyle}>
+			<thead>
+				<tr>
+					<th style={thStyle}>Guest</th>
+					<th style={thStyle}>IP</th>
+					<th style={thStyle}>Connected</th>
+					<th style={thStyle}>Downloaded</th>
+					<th style={thStyle}>Uploaded</th>
+				</tr>
+			</thead>
+			<tbody>
+				{sessions.map((s) => (
+					<tr key={s.session_id}>
+						<td style={tdStyle}>
+							<div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+								<span style={{ fontWeight: 500 }}>{s.display_name}</span>
+								<code style={{ fontSize: "var(--text-xs)", color: "var(--color-fg-muted)" }}>
+									{s.principal_id.slice(0, 12)}
+								</code>
+							</div>
+						</td>
+						<td style={tdStyle}>{s.remote_ip || "—"}</td>
+						<td style={tdStyle}>{new Date(s.connected_at).toLocaleTimeString()}</td>
+						<td style={{ ...tdStyle, fontVariantNumeric: "tabular-nums" }}>
+							{formatBytes(s.bytes_read)}
+						</td>
+						<td style={{ ...tdStyle, fontVariantNumeric: "tabular-nums" }}>
+							{formatBytes(s.bytes_written)}
+						</td>
+					</tr>
+				))}
+			</tbody>
+		</table>
 	);
 }
 

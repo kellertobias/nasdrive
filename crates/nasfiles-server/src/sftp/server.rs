@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use nasfiles_core::models::{AuthUser, FolderCaps, Root};
@@ -329,8 +330,43 @@ impl russh::server::Handler for SshSession {
             remote = ?self.remote_addr,
             "SFTP subsystem accepted"
         );
-        let handler =
-            SftpSession::new(self.state.clone(), principal, fingerprint, self.remote_addr);
+
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let (principal_kind, principal_id, display_name) = match &principal {
+            Principal::User(u) => (
+                "user".to_string(),
+                u.user_id.clone(),
+                u.display_name.clone(),
+            ),
+            Principal::Temp(t) => (
+                "temp_user".to_string(),
+                t.id.clone(),
+                t.display_name.clone(),
+            ),
+        };
+        let remote_ip = self.remote_addr.map(|a| a.ip().to_string());
+        let connected_at = chrono::Utc::now().timestamp_millis();
+        let (bytes_read_counter, bytes_written_counter) = self
+            .state
+            .sftp_sessions
+            .register(
+                session_id.clone(),
+                principal_kind,
+                principal_id,
+                display_name,
+                remote_ip,
+                connected_at,
+            )
+            .await;
+
+        let handler = SftpSession::new(
+            self.state.clone(),
+            principal,
+            fingerprint,
+            self.remote_addr,
+            bytes_read_counter,
+            bytes_written_counter,
+        );
         russh_sftp::server::run_with_config(
             channel.into_stream(),
             handler,
@@ -339,6 +375,7 @@ impl russh::server::Handler for SshSession {
             },
         )
         .await;
+        self.state.sftp_sessions.unregister(&session_id).await;
         Ok(())
     }
 }
@@ -361,6 +398,7 @@ impl Principal {
 #[derive(Clone)]
 struct TempPrincipal {
     id: String,
+    display_name: String,
     root_kind: String,
     root_key: String,
     relative_path: String,
@@ -376,6 +414,8 @@ struct SftpSession {
     version: Option<u32>,
     handles: HashMap<String, HandleEntry>,
     last_oidc_refresh_at: i64,
+    bytes_read_counter: Arc<AtomicU64>,
+    bytes_written_counter: Arc<AtomicU64>,
 }
 
 enum HandleEntry {
@@ -407,6 +447,8 @@ impl SftpSession {
         principal: Principal,
         fingerprint: String,
         remote_addr: Option<SocketAddr>,
+        bytes_read_counter: Arc<AtomicU64>,
+        bytes_written_counter: Arc<AtomicU64>,
     ) -> Self {
         Self {
             state,
@@ -416,6 +458,8 @@ impl SftpSession {
             version: None,
             handles: HashMap::new(),
             last_oidc_refresh_at: chrono::Utc::now().timestamp(),
+            bytes_read_counter,
+            bytes_written_counter,
         }
     }
 
@@ -1106,6 +1150,8 @@ impl russh_sftp::server::Handler for SftpSession {
             return Err(StatusCode::Eof);
         }
         buf.truncate(read);
+        self.bytes_read_counter
+            .fetch_add(read as u64, Ordering::Relaxed);
         Ok(Data { id, data: buf })
     }
 
@@ -1143,7 +1189,10 @@ impl russh_sftp::server::Handler for SftpSession {
         file.seek(std::io::SeekFrom::Start(offset))
             .await
             .map_err(map_io_error)?;
+        let written = data.len();
         file.write_all(&data).await.map_err(map_io_error)?;
+        self.bytes_written_counter
+            .fetch_add(written as u64, Ordering::Relaxed);
         Ok(Self::ok(id))
     }
 
@@ -1394,7 +1443,7 @@ async fn resolve_principal(
         let now = chrono::Utc::now().timestamp_millis();
         let row = sqlx::query(
             r#"
-            SELECT t.id, t.root_kind, t.root_key, t.relative_path,
+            SELECT t.id, t.display_name, t.root_kind, t.root_key, t.relative_path,
                    CASE WHEN t.can_write THEN 1 ELSE 0 END AS can_write,
                    t.expires_at
             FROM sftp_temp_user_keys k
@@ -1413,6 +1462,7 @@ async fn resolve_principal(
         return Ok(row.map(|row| {
             Principal::Temp(TempPrincipal {
                 id: row.get("id"),
+                display_name: row.get("display_name"),
                 root_kind: row.get("root_kind"),
                 root_key: row.get("root_key"),
                 relative_path: row.get("relative_path"),

@@ -2,6 +2,7 @@ use crate::config::AppConfig;
 use crate::fs::file_jobs::FileJobStore;
 use crate::fs::preview::MediaPreviewService;
 use crate::fs::search::SearchService;
+use crate::sftp::sessions::SftpSessionRegistry;
 use crate::shares::access::ShareRateLimiter;
 use crate::thumb::cache::ThumbnailCache;
 use sqlx::AnyPool;
@@ -19,6 +20,7 @@ pub struct AppState {
     pub file_jobs: FileJobStore,
     pub search: SearchService,
     pub webauthn: Option<Arc<Webauthn>>,
+    pub sftp_sessions: SftpSessionRegistry,
 }
 
 impl AppState {
@@ -43,6 +45,7 @@ impl AppState {
             thumb_cache,
             file_jobs: FileJobStore::new(pool.clone()),
             webauthn,
+            sftp_sessions: SftpSessionRegistry::new(),
         })
     }
 }

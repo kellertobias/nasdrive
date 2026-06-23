@@ -292,6 +292,28 @@ function ProfilePage() {
 
 					<section style={{ marginBottom: "var(--space-6)" }}>
 						<h2 style={sectionTitleStyle}>SFTP keys</h2>
+						{user?.capabilities.sftp_enabled && user.capabilities.sftp_hostname && (
+							<div style={{
+								display: "flex",
+								alignItems: "center",
+								gap: "var(--space-3)",
+								padding: "var(--space-3) var(--space-4)",
+								background: "var(--color-bg-muted)",
+								borderRadius: "var(--radius-md)",
+								border: "1px solid var(--color-border)",
+								marginBottom: "var(--space-4)",
+							}}>
+								<Icon name="terminal" size={16} style={{ color: "var(--color-fg-muted)", flexShrink: 0 }} />
+								<div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+									<span style={{ fontSize: "var(--text-xs)", color: "var(--color-fg-muted)", fontWeight: 500 }}>
+										Connection URL
+									</span>
+									<code style={{ fontSize: "var(--text-sm)", userSelect: "all" }}>
+										{`sftp://${user.username}@${user.capabilities.sftp_hostname}:${user.capabilities.sftp_port}`}
+									</code>
+								</div>
+							</div>
+						)}
 						<div style={{ display: "grid", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
 							<input
 								value={label}

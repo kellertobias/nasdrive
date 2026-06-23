@@ -142,6 +142,9 @@ export interface ServerCapabilities {
   thumbnails: boolean;
   media_preview_transcoding: boolean;
   media_metadata_probe: boolean;
+  sftp_enabled: boolean;
+  sftp_hostname: string | null;
+  sftp_port: number;
 }
 
 export interface BuildInfo {
@@ -186,6 +189,17 @@ export interface SftpAccessLogEntry {
   ip: string | null;
   success: boolean;
   error: string | null;
+}
+
+export interface ActiveSftpSession {
+  session_id: string;
+  principal_kind: string;
+  principal_id: string;
+  display_name: string;
+  remote_ip: string | null;
+  connected_at: number;
+  bytes_read: number;
+  bytes_written: number;
 }
 
 export interface IpBlocklistEntry {
@@ -717,6 +731,9 @@ export const api = {
 
   revokeSftpTempUser: (id: string) =>
     apiFetch<{ ok: boolean }>(`/api/admin/sftp-temp-users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+  listActiveSftpSessions: () =>
+    apiFetch<{ sessions: ActiveSftpSession[] }>('/api/admin/sftp-sessions'),
 
   listIpBlocklist: () =>
     apiFetch<{ entries: IpBlocklistEntry[] }>('/api/admin/ip-blocklist'),

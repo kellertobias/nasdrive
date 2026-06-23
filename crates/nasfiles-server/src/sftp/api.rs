@@ -543,3 +543,12 @@ fn db_error(e: sqlx::Error) -> Response {
     )
         .into_response()
 }
+
+pub async fn list_active_sessions(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+) -> Result<impl IntoResponse, Response> {
+    require_admin(&user).map_err(api_error)?;
+    let sessions = state.sftp_sessions.list_guests().await;
+    Ok(Json(serde_json::json!({ "sessions": sessions })))
+}
