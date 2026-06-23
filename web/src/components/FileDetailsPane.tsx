@@ -32,6 +32,7 @@ export function FileDetailsPane({
 }: FileDetailsPaneProps) {
   const entry = selected?.entry;
   const [fileInfo, setFileInfo] = useState<FileEntry | null>(null);
+  const [dirSize, setDirSize] = useState<number | 'loading' | null>(null);
   const icon = entry ? getFileIcon(entry) : null;
   const showThumb = Boolean(entry && !entry.is_dir && hasThumbnail(entry));
   const mediaInfo = fileInfo?.media_info ?? entry?.media_info ?? null;
@@ -53,6 +54,25 @@ export function FileDetailsPane({
       })
       .catch(() => {
         if (!cancelled) setFileInfo(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entryIsDirectory, entryName, root, selectedPath]);
+
+  useEffect(() => {
+    setDirSize(null);
+    if (!selectedPath || !entryName || !entryIsDirectory || !root) return;
+
+    setDirSize('loading');
+    let cancelled = false;
+    api.folderSizes(root, [selectedPath])
+      .then((result) => {
+        if (!cancelled) setDirSize(result.sizes[selectedPath] ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setDirSize(null);
       });
 
     return () => {
@@ -155,7 +175,11 @@ export function FileDetailsPane({
 
           <dl style={detailsListStyle}>
             <InfoTerm label="Kind" value={entry.is_dir ? 'Folder' : entry.mime_type || 'File'} />
-            <InfoTerm label="Size" value={entry.is_dir ? '-' : formatFileSize(entry.size)} />
+            <InfoTerm label="Size" value={
+              entry.is_dir
+                ? (dirSize === 'loading' ? 'Calculating…' : dirSize != null ? formatFileSize(dirSize) : '—')
+                : formatFileSize(entry.size)
+            } />
             <InfoTerm label="Modified" value={formatModifiedDate(entry.modified_at)} />
           </dl>
 

@@ -162,6 +162,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/files/{root}/info", get(api::files::file_info))
         .route(
+            "/files/{root}/folder-sizes",
+            post(api::files::folder_sizes),
+        )
+        .route(
             "/files/{root}/thumbnail",
             get(api::thumbnails::get_thumbnail),
         )

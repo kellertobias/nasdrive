@@ -412,6 +412,12 @@ export const api = {
   fileInfo: (root: string, path: string) =>
     apiFetch<FileEntry & { path: string }>(`/api/files/${encodeURIComponent(root)}/info?path=${encodeURIComponent(path)}`),
 
+  folderSizes: (root: string, paths: string[]) =>
+    apiFetch<{ sizes: Record<string, number> }>(`/api/files/${encodeURIComponent(root)}/folder-sizes`, {
+      method: 'POST',
+      body: JSON.stringify({ paths }),
+    }),
+
   downloadUrl: (root: string, path: string) =>
     `/api/files/${encodeURIComponent(root)}/download?path=${encodeURIComponent(path)}`,
 

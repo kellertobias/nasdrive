@@ -1,9 +1,10 @@
 import type { FileEntry } from '../api/client';
+import api from '../api/client';
 import { getFileIcon, formatFileSize, formatModifiedDate } from '../lib/icons';
 import { useViewStore } from '../state/view';
 import { MiddleEllipsis } from './MiddleEllipsis';
 import { FileIcon } from './Icon';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { entryPath, hasNasfilesDrag, isDemoDraggedPath, isDemoDragHoverPath, isDemoDropTarget, setFileDragPayload } from '../lib/fileDrag';
 import { useGlobalDragCleanup } from '../lib/dragState';
@@ -33,6 +34,20 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
   const lastClickedIndex = useRef<number>(-1);
   const listRef = useRef<HTMLDivElement>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dirSizes, setDirSizes] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    setDirSizes({});
+    const dirPaths = entries.filter(e => e.is_dir).map(e => entryPath(path, e.name));
+    if (!root || dirPaths.length === 0) return;
+
+    let cancelled = false;
+    api.folderSizes(root, dirPaths)
+      .then((result) => { if (!cancelled) setDirSizes(result.sizes); })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [root, path, entries]);
   const resetDropTarget = useCallback(() => setDropTarget(null), []);
   const transferPlaceholders = incomingTransferPlaceholders(
     transferJobs,
@@ -171,6 +186,7 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
                 <span style={{
                   flex: 1,
                   minWidth: 0,
+                  fontFamily: 'var(--font-mono)',
                   fontSize: 'var(--text-sm)',
                   fontWeight: 400,
                   color: 'var(--color-fg-muted)',
@@ -340,6 +356,7 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
               <span style={{
                 flex: 1,
                 minWidth: 0,
+                fontFamily: 'var(--font-mono)',
                 fontSize: 'var(--text-sm)',
                 fontWeight: entry.is_dir ? 500 : 400,
                 color: isBeingMoved || isBeingDragged || isDragHover ? 'var(--color-fg-muted)' : 'var(--color-fg)',
@@ -357,7 +374,7 @@ export function FileList({ entries, onOpen, root = '', path, scrollParentRef, on
               color: 'var(--color-fg-muted)',
               padding: '0 var(--space-3)',
             }}>
-              {isBeingDragged || isDragHover ? 'Dragging...' : isBeingMoved ? 'Moving...' : entry.is_dir ? '—' : formatFileSize(entry.size)}
+              {isBeingDragged || isDragHover ? 'Dragging...' : isBeingMoved ? 'Moving...' : entry.is_dir ? (dirSizes[filePath] != null ? formatFileSize(dirSizes[filePath]) : '—') : formatFileSize(entry.size)}
             </div>
 
             <div className="tabular-nums" style={{

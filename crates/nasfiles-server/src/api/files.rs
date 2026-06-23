@@ -339,6 +339,62 @@ pub async fn file_info(
 }
 
 // =======================================================================
+// Folder sizes
+// =======================================================================
+
+#[derive(Deserialize)]
+pub struct FolderSizesRequest {
+    pub paths: Vec<String>,
+}
+
+/// POST /api/files/:root/folder-sizes — compute recursive sizes for a batch of directories.
+pub async fn folder_sizes(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(root_key): Path<String>,
+    Json(body): Json<FolderSizesRequest>,
+) -> Result<impl IntoResponse, axum::response::Response> {
+    let root_path = roots::resolve_root(&state.config, &user, &root_key, roots::RequiredCap::Read)
+        .map_err(|e| e.into_response())?;
+
+    let paths: Vec<String> = body.paths.into_iter().take(200).collect();
+    let mut handles = Vec::with_capacity(paths.len());
+
+    for path_str in paths {
+        let root_path = root_path.clone();
+        let handle = tokio::task::spawn_blocking(move || {
+            let resolved = nasfiles_core::safe_path::resolve(&root_path, &path_str).ok()?;
+            let size = compute_dir_size(&resolved).ok()?;
+            Some((path_str, size))
+        });
+        handles.push(handle);
+    }
+
+    let mut sizes = std::collections::HashMap::new();
+    for handle in handles {
+        if let Ok(Some((path, size))) = handle.await {
+            sizes.insert(path, size);
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "sizes": sizes })))
+}
+
+fn compute_dir_size(path: &std::path::Path) -> std::io::Result<u64> {
+    let mut total = 0u64;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        if metadata.is_dir() {
+            total += compute_dir_size(&entry.path()).unwrap_or(0);
+        } else {
+            total += metadata.len();
+        }
+    }
+    Ok(total)
+}
+
+// =======================================================================
 // Write operations
 // =======================================================================
 
