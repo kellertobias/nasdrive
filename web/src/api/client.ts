@@ -281,6 +281,7 @@ export interface FileEntry {
   has_thumbnail: boolean;
   media_info?: MediaInfo | null;
   image_info?: ImageInfo | null;
+  item_count?: number;
 }
 
 export interface DirectoryListing {

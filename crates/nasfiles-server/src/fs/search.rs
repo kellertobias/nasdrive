@@ -457,6 +457,7 @@ impl SearchDoc {
                 has_thumbnail: self.has_thumbnail,
                 media_info: None,
                 image_info: None,
+                item_count: None,
             },
             source,
             score,

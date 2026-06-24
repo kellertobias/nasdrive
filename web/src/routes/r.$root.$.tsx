@@ -753,6 +753,60 @@ function FileBrowser() {
 
   const selectedItems = Array.from(selectedPaths);
   const selectedCount = selectedItems.length;
+
+  const [selectionDirSizes, setSelectionDirSizes] = useState<
+    Record<string, number>
+  >({});
+
+  useEffect(() => {
+    if (!listing || selectedCount === 0) {
+      setSelectionDirSizes({});
+      return;
+    }
+    const selectedDirPaths = selectedItems.filter((p) => {
+      const name = p.split("/").pop() ?? "";
+      return listing.entries.some((e) => e.is_dir && e.name === name && (path ? `${path}/${e.name}` : e.name) === p);
+    });
+    if (!root || selectedDirPaths.length === 0) {
+      setSelectionDirSizes({});
+      return;
+    }
+    let cancelled = false;
+    api
+      .folderSizes(root, selectedDirPaths)
+      .then((result) => {
+        if (!cancelled) setSelectionDirSizes(result.sizes);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [root, path, selectedItems, listing, selectedCount]);
+
+  const selectionStats = useMemo(() => {
+    if (selectedCount === 0 || !listing) return null;
+    let totalSize = 0;
+    let knownSize = true;
+    for (const p of selectedItems) {
+      const name = p.split("/").pop() ?? "";
+      const entry = listing.entries.find(
+        (e) => e.name === name && (path ? `${path}/${e.name}` : e.name) === p,
+      );
+      if (!entry) continue;
+      if (entry.is_dir) {
+        const ds = selectionDirSizes[p];
+        if (ds != null) {
+          totalSize += ds;
+        } else {
+          knownSize = false;
+        }
+      } else {
+        totalSize += entry.size;
+      }
+    }
+    return { totalSize, knownSize };
+  }, [selectedCount, selectedItems, listing, path, selectionDirSizes]);
+
   const previewEntries = useMemo(() => {
     if (!previewTarget) return [];
     if (previewTarget.parentPath === path) return listing?.entries ?? [];
@@ -887,6 +941,27 @@ function FileBrowser() {
               />
 
               <div style={{ flex: 1 }} />
+
+              {/* Selection summary */}
+              {selectionStats && (
+                <div
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    color: "var(--color-fg-muted)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {selectedCount === 1 ? "1 item" : `${selectedCount} items`}
+                  {" · "}
+                  {selectionStats.knownSize
+                    ? selectionStats.totalSize > 0
+                      ? formatFileSize(selectionStats.totalSize)
+                      : "0 B"
+                    : selectionStats.totalSize > 0
+                      ? `~${formatFileSize(selectionStats.totalSize)}`
+                      : "Calculating…"}
+                </div>
+              )}
 
               {/* Action buttons */}
               {caps.write && (

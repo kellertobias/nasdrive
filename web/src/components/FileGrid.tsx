@@ -458,11 +458,25 @@ export function FileGrid({
                   </div>
                 )}
 
-                {/* Size */}
-                {!entry.is_dir &&
-                  !isBeingMoved &&
+                {/* Size / item count */}
+                {!isBeingMoved &&
                   !isBeingDragged &&
-                  !isDragHover && (
+                  !isDragHover &&
+                  (entry.is_dir ? (
+                    entry.item_count != null && (
+                      <div
+                        className="tabular-nums"
+                        style={{
+                          fontSize: "var(--text-xs)",
+                          color: "var(--color-fg-subtle)",
+                        }}
+                      >
+                        {entry.item_count === 1
+                          ? "1 item"
+                          : `${entry.item_count} items`}
+                      </div>
+                    )
+                  ) : (
                     <div
                       className="tabular-nums"
                       style={{
@@ -472,7 +486,7 @@ export function FileGrid({
                     >
                       {formatFileSize(entry.size)}
                     </div>
-                  )}
+                  ))}
               </button>
             );
           });

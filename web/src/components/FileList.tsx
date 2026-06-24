@@ -562,8 +562,8 @@ export function FileList({
                   : isBeingMoved
                     ? "Moving..."
                     : entry.is_dir
-                      ? dirSizes[filePath] != null
-                        ? formatFileSize(dirSizes[filePath])
+                      ? entry.item_count != null
+                        ? `${entry.item_count} ${entry.item_count === 1 ? "item" : "items"}`
                         : "—"
                       : formatFileSize(entry.size)}
               </div>

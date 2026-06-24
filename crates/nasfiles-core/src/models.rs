@@ -147,6 +147,9 @@ pub struct FileEntry {
     pub media_info: Option<MediaInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_info: Option<ImageInfo>,
+    /// Number of direct (non-hidden) children, set for directory entries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_count: Option<u64>,
 }
 
 /// Extracted metadata for audio/video files.

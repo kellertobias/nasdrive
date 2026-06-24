@@ -64,6 +64,18 @@ pub fn list_directory(
         let has_thumbnail =
             !is_dir && kind::supports_thumbnail_path(&entry.path(), thumbnails_enabled);
 
+        let item_count = if is_dir {
+            std::fs::read_dir(entry.path())
+                .ok()
+                .map(|rd| {
+                    rd.filter_map(|e| e.ok())
+                        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+                        .count() as u64
+                })
+        } else {
+            None
+        };
+
         entries.push(FileEntry {
             name,
             size,
@@ -73,6 +85,7 @@ pub fn list_directory(
             has_thumbnail,
             media_info: None,
             image_info: None,
+            item_count,
         });
     }
 
