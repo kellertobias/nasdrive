@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import api from "../api/client";
+import api, { UploadAbortedError } from "../api/client";
 import type { FileEntry } from "../api/client";
 import {
   getFileIcon,
@@ -57,7 +57,7 @@ function ShareViewer() {
       id: string;
       name: string;
       progress: number;
-      status: "uploading" | "done" | "error";
+      status: "uploading" | "done" | "error" | "pending" | "cancelled";
       error?: string;
     }>
   >([]);
@@ -66,6 +66,8 @@ function ShareViewer() {
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
   const uploadHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragCounterRef = useRef(0);
+  const uploadAbortMapRef = useRef<Map<string, () => void>>(new Map());
+  const uploadCancelledRef = useRef<Set<string>>(new Set());
   const listScrollRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
@@ -182,6 +184,9 @@ function ShareViewer() {
         uploadHideTimerRef.current = null;
       }
 
+      uploadAbortMapRef.current.clear();
+      uploadCancelledRef.current.clear();
+
       const items = files.map((f, i) => ({
         id: `${Date.now()}-${i}`,
         name: f.name,
@@ -193,32 +198,52 @@ function ShareViewer() {
 
       await Promise.allSettled(
         items.map(async (item, idx) => {
-          try {
-            await api.shareUpload(
-              token,
-              bearer,
-              subPath,
-              [files[idx]],
-              (pct) => {
-                setUploadItems((prev) =>
-                  prev.map((u) =>
-                    u.id === item.id ? { ...u, progress: pct } : u,
-                  ),
-                );
-              },
+          if (uploadCancelledRef.current.has(item.id)) {
+            setUploadItems((prev) =>
+              prev.map((u) =>
+                u.id === item.id ? { ...u, status: "cancelled" } : u,
+              ),
             );
+            return;
+          }
+          const handle = api.shareUpload(
+            token,
+            bearer,
+            subPath,
+            [files[idx]],
+            (pct) => {
+              setUploadItems((prev) =>
+                prev.map((u) =>
+                  u.id === item.id ? { ...u, progress: pct } : u,
+                ),
+              );
+            },
+          );
+          uploadAbortMapRef.current.set(item.id, handle.abort);
+          try {
+            await handle.promise;
+            uploadAbortMapRef.current.delete(item.id);
             setUploadItems((prev) =>
               prev.map((u) =>
                 u.id === item.id ? { ...u, status: "done", progress: 100 } : u,
               ),
             );
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            setUploadItems((prev) =>
-              prev.map((u) =>
-                u.id === item.id ? { ...u, status: "error", error: msg } : u,
-              ),
-            );
+            uploadAbortMapRef.current.delete(item.id);
+            if (err instanceof UploadAbortedError) {
+              setUploadItems((prev) =>
+                prev.map((u) =>
+                  u.id === item.id ? { ...u, status: "cancelled" } : u,
+                ),
+              );
+            } else {
+              const msg = err instanceof Error ? err.message : String(err);
+              setUploadItems((prev) =>
+                prev.map((u) =>
+                  u.id === item.id ? { ...u, status: "error", error: msg } : u,
+                ),
+              );
+            }
           }
         }),
       );
@@ -240,15 +265,47 @@ function ShareViewer() {
     [bearer, token, subPath, meta?.is_directory, meta?.allow_download],
   );
 
+  const handleCancelUploadItem = useCallback((id: string) => {
+    const abortFn = uploadAbortMapRef.current.get(id);
+    if (abortFn) {
+      abortFn();
+    } else {
+      uploadCancelledRef.current.add(id);
+      setUploadItems((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, status: "cancelled" } : u)),
+      );
+    }
+  }, []);
+
+  const handleCancelAllUploads = useCallback(() => {
+    uploadAbortMapRef.current.forEach((abort) => abort());
+    uploadAbortMapRef.current.clear();
+    setUploadItems((prev) => {
+      prev
+        .filter((u) => u.status === "pending")
+        .forEach((u) => uploadCancelledRef.current.add(u.id));
+      return prev.map((u) =>
+        u.status === "pending" || u.status === "uploading"
+          ? { ...u, status: "cancelled" }
+          : u,
+      );
+    });
+  }, []);
+
+  const activeUploadItems = useMemo(
+    () => uploadItems.filter((u) => u.status !== "cancelled"),
+    [uploadItems],
+  );
+
   const uploadProgressOverall = useMemo(
     () =>
-      uploadItems.length > 0
+      activeUploadItems.length > 0
         ? Math.round(
-            uploadItems.reduce((s, u) => s + u.progress, 0) /
-              uploadItems.length,
+            activeUploadItems.reduce((s, u) => s + u.progress, 0) /
+              activeUploadItems.length,
           )
         : 0,
-    [uploadItems],
+    [activeUploadItems],
   );
 
   const handleDragEnter = useCallback(
@@ -886,18 +943,47 @@ function ShareViewer() {
             style={{
               display: "flex",
               justifyContent: "space-between",
+              alignItems: "center",
               marginBottom: "var(--space-2)",
               fontSize: "var(--text-sm)",
               fontWeight: 600,
             }}
           >
             <span>
-              Uploading {uploadItems.filter((u) => u.status === "done").length}/
-              {uploadItems.length}
+              Uploading{" "}
+              {activeUploadItems.filter((u) => u.status === "done").length}/
+              {activeUploadItems.length}
             </span>
-            <span style={{ color: "var(--color-fg-muted)" }}>
-              {uploadProgressOverall}%
-            </span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+              }}
+            >
+              <span style={{ color: "var(--color-fg-muted)" }}>
+                {uploadProgressOverall}%
+              </span>
+              {uploadItems.some(
+                (u) => u.status === "pending" || u.status === "uploading",
+              ) && (
+                <button
+                  onClick={handleCancelAllUploads}
+                  title="Cancel all uploads"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "0 2px",
+                    color: "var(--color-fg-muted)",
+                    fontSize: "var(--text-sm)",
+                    lineHeight: 1,
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
           <div
             style={{
@@ -947,7 +1033,9 @@ function ShareViewer() {
                     ? "✓"
                     : item.status === "error"
                       ? "✗"
-                      : "⋯"}
+                      : item.status === "cancelled"
+                        ? "–"
+                        : "⋯"}
                 </span>
                 <span
                   style={{
@@ -955,18 +1043,42 @@ function ShareViewer() {
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    color:
+                      item.status === "cancelled"
+                        ? "var(--color-fg-muted)"
+                        : undefined,
                   }}
                 >
                   {item.name}
                 </span>
-                {item.status !== "error" && (
+                {item.status === "pending" || item.status === "uploading" ? (
+                  <button
+                    onClick={() => handleCancelUploadItem(item.id)}
+                    title="Cancel upload"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "0 2px",
+                      color: "var(--color-fg-subtle)",
+                      fontSize: "var(--text-xs)",
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                ) : item.status === "cancelled" ? (
+                  <span style={{ color: "var(--color-fg-subtle)" }}>
+                    Cancelled
+                  </span>
+                ) : item.status !== "error" ? (
                   <span
                     className="tabular-nums"
                     style={{ color: "var(--color-fg-subtle)" }}
                   >
                     {item.progress}%
                   </span>
-                )}
+                ) : null}
               </div>
               {item.status === "error" && item.error && (
                 <div

@@ -6,7 +6,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import api from "../api/client";
+import api, { UploadAbortedError } from "../api/client";
 import { Icon } from "./Icon";
 import {
   getExternalDropFiles,
@@ -29,7 +29,7 @@ interface UploadItem {
   id: string;
   file: File;
   progress: number;
-  status: "pending" | "uploading" | "done" | "error";
+  status: "pending" | "uploading" | "done" | "error" | "cancelled";
   error?: string;
 }
 
@@ -49,6 +49,8 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const abortMapRef = useRef<Map<string, () => void>>(new Map());
+    const cancelledIdsRef = useRef<Set<string>>(new Set());
 
     const resetDragState = useCallback(() => {
       dragCounter.current = 0;
@@ -129,6 +131,9 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
           hideTimerRef.current = null;
         }
 
+        abortMapRef.current.clear();
+        cancelledIdsRef.current.clear();
+
         // Assign stable IDs so concurrent batches don't corrupt each other via index.
         const items: UploadItem[] = files.map((f, i) => ({
           id: `${Date.now()}-${i}-${f.name}`,
@@ -145,19 +150,35 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
           const batch = items.slice(i, i + batchSize);
           await Promise.allSettled(
             batch.map(async (item) => {
+              if (cancelledIdsRef.current.has(item.id)) {
+                setUploads((prev) =>
+                  prev.map((u) =>
+                    u.id === item.id ? { ...u, status: "cancelled" } : u,
+                  ),
+                );
+                return;
+              }
               setUploads((prev) =>
                 prev.map((u) =>
                   u.id === item.id ? { ...u, status: "uploading" } : u,
                 ),
               );
-              try {
-                await api.upload(targetRoot, targetPath, [item.file], (pct) => {
+              const handle = api.upload(
+                targetRoot,
+                targetPath,
+                [item.file],
+                (pct) => {
                   setUploads((prev) =>
                     prev.map((u) =>
                       u.id === item.id ? { ...u, progress: pct } : u,
                     ),
                   );
-                });
+                },
+              );
+              abortMapRef.current.set(item.id, handle.abort);
+              try {
+                await handle.promise;
+                abortMapRef.current.delete(item.id);
                 setUploads((prev) =>
                   prev.map((u) =>
                     u.id === item.id
@@ -166,14 +187,23 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
                   ),
                 );
               } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
-                setUploads((prev) =>
-                  prev.map((u) =>
-                    u.id === item.id
-                      ? { ...u, status: "error", error: msg }
-                      : u,
-                  ),
-                );
+                abortMapRef.current.delete(item.id);
+                if (err instanceof UploadAbortedError) {
+                  setUploads((prev) =>
+                    prev.map((u) =>
+                      u.id === item.id ? { ...u, status: "cancelled" } : u,
+                    ),
+                  );
+                } else {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setUploads((prev) =>
+                    prev.map((u) =>
+                      u.id === item.id
+                        ? { ...u, status: "error", error: msg }
+                        : u,
+                    ),
+                  );
+                }
               }
             }),
           );
@@ -188,6 +218,33 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
       },
       [root, path, onUploadComplete],
     );
+
+    const handleCancelItem = useCallback((id: string) => {
+      const abortFn = abortMapRef.current.get(id);
+      if (abortFn) {
+        abortFn();
+      } else {
+        cancelledIdsRef.current.add(id);
+        setUploads((prev) =>
+          prev.map((u) => (u.id === id ? { ...u, status: "cancelled" } : u)),
+        );
+      }
+    }, []);
+
+    const handleCancelAll = useCallback(() => {
+      abortMapRef.current.forEach((abort) => abort());
+      abortMapRef.current.clear();
+      setUploads((prev) => {
+        prev
+          .filter((u) => u.status === "pending")
+          .forEach((u) => cancelledIdsRef.current.add(u.id));
+        return prev.map((u) =>
+          u.status === "pending" || u.status === "uploading"
+            ? { ...u, status: "cancelled" }
+            : u,
+        );
+      });
+    }, []);
 
     useEffect(() => {
       if (typeof window === "undefined") return;
@@ -296,12 +353,13 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
       [uploadFiles],
     );
 
-    const totalFiles = uploads.length;
-    const doneFiles = uploads.filter((u) => u.status === "done").length;
+    const activeUploads = uploads.filter((u) => u.status !== "cancelled");
+    const totalFiles = activeUploads.length;
+    const doneFiles = activeUploads.filter((u) => u.status === "done").length;
     const overallProgress =
       totalFiles > 0
         ? Math.round(
-            uploads.reduce((sum, u) => sum + u.progress, 0) / totalFiles,
+            activeUploads.reduce((sum, u) => sum + u.progress, 0) / totalFiles,
           )
         : 0;
 
@@ -377,7 +435,9 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
                     : "var(--color-danger)",
               }}
             >
-              {dragStatus === "accept" ? "Drop to upload" : "Cannot upload here"}
+              {dragStatus === "accept"
+                ? "Drop to upload"
+                : "Cannot upload here"}
             </div>
             <div
               style={{
@@ -419,14 +479,41 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
               <span style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>
                 Uploading {doneFiles}/{totalFiles}
               </span>
-              <span
+              <div
                 style={{
-                  fontSize: "var(--text-sm)",
-                  color: "var(--color-fg-muted)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-2)",
                 }}
               >
-                {overallProgress}%
-              </span>
+                <span
+                  style={{
+                    fontSize: "var(--text-sm)",
+                    color: "var(--color-fg-muted)",
+                  }}
+                >
+                  {overallProgress}%
+                </span>
+                {uploads.some(
+                  (u) => u.status === "pending" || u.status === "uploading",
+                ) && (
+                  <button
+                    onClick={handleCancelAll}
+                    title="Cancel all uploads"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "0 2px",
+                      color: "var(--color-fg-muted)",
+                      fontSize: "var(--text-sm)",
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
 
             <div
@@ -479,7 +566,9 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
                         ? "✓"
                         : item.status === "error"
                           ? "✗"
-                          : "⋯"}
+                          : item.status === "cancelled"
+                            ? "–"
+                            : "⋯"}
                     </span>
                     <span
                       style={{
@@ -487,19 +576,43 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
-                        color: "var(--color-fg)",
+                        color:
+                          item.status === "cancelled"
+                            ? "var(--color-fg-muted)"
+                            : "var(--color-fg)",
                       }}
                     >
                       {item.file.name}
                     </span>
-                    {item.status !== "error" && (
+                    {item.status === "pending" ||
+                    item.status === "uploading" ? (
+                      <button
+                        onClick={() => handleCancelItem(item.id)}
+                        title="Cancel upload"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: "0 2px",
+                          color: "var(--color-fg-subtle)",
+                          fontSize: "var(--text-xs)",
+                          lineHeight: 1,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    ) : item.status === "cancelled" ? (
+                      <span style={{ color: "var(--color-fg-subtle)" }}>
+                        Cancelled
+                      </span>
+                    ) : item.status !== "error" ? (
                       <span
                         className="tabular-nums"
                         style={{ color: "var(--color-fg-subtle)" }}
                       >
                         {item.progress}%
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   {item.status === "error" && item.error && (
                     <div

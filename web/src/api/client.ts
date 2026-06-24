@@ -18,6 +18,13 @@ class ApiError extends Error {
   }
 }
 
+export class UploadAbortedError extends Error {
+  constructor() {
+    super("Upload cancelled");
+    this.name = "UploadAbortedError";
+  }
+}
+
 function apiErrorMessage(
   status: number,
   statusText: string,
@@ -738,15 +745,18 @@ export const api = {
     path: string,
     files: File[],
     onProgress?: (pct: number) => void,
-  ) => {
-    return new Promise<{ ok: boolean; files_uploaded: number }>(
+  ): {
+    promise: Promise<{ ok: boolean; files_uploaded: number }>;
+    abort: () => void;
+  } => {
+    const xhr = new XMLHttpRequest();
+    const promise = new Promise<{ ok: boolean; files_uploaded: number }>(
       (resolve, reject) => {
         const formData = new FormData();
         for (const file of files) {
           formData.append("file", file, file.name);
         }
 
-        const xhr = new XMLHttpRequest();
         xhr.open(
           "POST",
           `/api/files/${encodeURIComponent(root)}/upload?path=${encodeURIComponent(path)}`,
@@ -782,9 +792,14 @@ export const api = {
           reject(new ApiError(0, "Network error", null));
         });
 
+        xhr.addEventListener("abort", () => {
+          reject(new UploadAbortedError());
+        });
+
         xhr.send(formData);
       },
     );
+    return { promise, abort: () => xhr.abort() };
   },
 
   // ---- Share management ----
@@ -1091,14 +1106,17 @@ export const api = {
     path: string,
     files: File[],
     onProgress?: (pct: number) => void,
-  ) => {
-    return new Promise<{ ok: boolean; files_uploaded: number }>(
+  ): {
+    promise: Promise<{ ok: boolean; files_uploaded: number }>;
+    abort: () => void;
+  } => {
+    const xhr = new XMLHttpRequest();
+    const promise = new Promise<{ ok: boolean; files_uploaded: number }>(
       (resolve, reject) => {
         const formData = new FormData();
         for (const file of files) {
           formData.append("file", file, file.name);
         }
-        const xhr = new XMLHttpRequest();
         xhr.open(
           "POST",
           `/api/public/shares/${encodeURIComponent(token)}/upload?path=${encodeURIComponent(path)}`,
@@ -1134,9 +1152,13 @@ export const api = {
         xhr.addEventListener("error", () =>
           reject(new ApiError(0, "Network error", null)),
         );
+
+        xhr.addEventListener("abort", () => reject(new UploadAbortedError()));
+
         xhr.send(formData);
       },
     );
+    return { promise, abort: () => xhr.abort() };
   },
 };
 
