@@ -43,6 +43,18 @@ export function getExternalDropFiles(dataTransfer: DataTransfer) {
   return Array.from(dataTransfer.files).filter((file) => file.name);
 }
 
+interface NasfilesDropEvent extends Event {
+  __nasfilesExternalDropHandled?: boolean;
+}
+
+export function markExternalDropHandled(event: Event) {
+  (event as NasfilesDropEvent).__nasfilesExternalDropHandled = true;
+}
+
+export function isExternalDropHandled(event: Event) {
+  return Boolean((event as NasfilesDropEvent).__nasfilesExternalDropHandled);
+}
+
 function basename(path: string) {
   const idx = path.lastIndexOf("/");
   return idx === -1 ? path : path.slice(idx + 1);

@@ -12,6 +12,8 @@ import {
   getExternalDropFiles,
   hasExternalFileDrag,
   hasNasfilesDrag,
+  isExternalDropHandled,
+  markExternalDropHandled,
 } from "../lib/fileDrag";
 import { useGlobalDragCleanup } from "../lib/dragState";
 
@@ -38,16 +40,19 @@ export interface UploadZoneHandle {
 
 export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
   ({ root, path, children, onUploadComplete, canUpload = true }, ref) => {
-    const [isDragging, setIsDragging] = useState(false);
+    const [dragStatus, setDragStatus] = useState<"accept" | "reject" | null>(
+      null,
+    );
     const [uploads, setUploads] = useState<UploadItem[]>([]);
     const [showProgress, setShowProgress] = useState(false);
     const dragCounter = useRef(0);
+    const containerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const resetDragState = useCallback(() => {
       dragCounter.current = 0;
-      setIsDragging(false);
+      setDragStatus(null);
     }, []);
 
     useGlobalDragCleanup(resetDragState);
@@ -63,6 +68,17 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
       };
     }, []);
 
+    const isWithinUploadZone = useCallback((e: DragEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return false;
+      return (
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom
+      );
+    }, []);
+
     const handleDragEnter = useCallback(
       (e: React.DragEvent) => {
         if (!canUpload) return;
@@ -71,7 +87,7 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
         e.preventDefault();
         e.stopPropagation();
         dragCounter.current++;
-        setIsDragging(true);
+        setDragStatus(canUpload ? "accept" : "reject");
       },
       [canUpload],
     );
@@ -85,7 +101,7 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
         e.stopPropagation();
         dragCounter.current = Math.max(0, dragCounter.current - 1);
         if (dragCounter.current === 0) {
-          setIsDragging(false);
+          setDragStatus(null);
         }
       },
       [canUpload],
@@ -173,6 +189,69 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
       [root, path, onUploadComplete],
     );
 
+    useEffect(() => {
+      if (typeof window === "undefined") return;
+
+      const handleNativeDragOver = (e: DragEvent) => {
+        const dataTransfer = e.dataTransfer;
+        if (
+          !dataTransfer ||
+          hasNasfilesDrag(dataTransfer) ||
+          !hasExternalFileDrag(dataTransfer)
+        )
+          return;
+
+        e.preventDefault();
+        if (isWithinUploadZone(e) && canUpload) {
+          dataTransfer.dropEffect = "copy";
+          setDragStatus("accept");
+        } else {
+          dataTransfer.dropEffect = "none";
+          setDragStatus("reject");
+        }
+      };
+
+      const handleNativeDrop = (e: DragEvent) => {
+        const dataTransfer = e.dataTransfer;
+        if (
+          !dataTransfer ||
+          hasNasfilesDrag(dataTransfer) ||
+          !hasExternalFileDrag(dataTransfer)
+        )
+          return;
+
+        e.preventDefault();
+        const isAcceptedTarget = isWithinUploadZone(e) && canUpload;
+        if (!isAcceptedTarget) {
+          e.stopPropagation();
+          setDragStatus("reject");
+          window.setTimeout(resetDragState, 900);
+          return;
+        }
+
+        const files = getExternalDropFiles(dataTransfer);
+        window.setTimeout(() => {
+          if (isExternalDropHandled(e)) return;
+          markExternalDropHandled(e);
+          if (files.length === 0) {
+            setDragStatus("reject");
+            window.setTimeout(resetDragState, 900);
+            return;
+          }
+          resetDragState();
+          void uploadFiles(files);
+        }, 0);
+      };
+
+      window.addEventListener("dragover", handleNativeDragOver, true);
+      window.addEventListener("drop", handleNativeDrop, true);
+
+      return () => {
+        window.removeEventListener("dragover", handleNativeDragOver, true);
+        window.removeEventListener("drop", handleNativeDrop, true);
+      };
+    }, [canUpload, isWithinUploadZone, resetDragState, uploadFiles]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -186,13 +265,23 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
 
     const handleDrop = useCallback(
       async (e: React.DragEvent) => {
-        if (!canUpload) return;
         if (hasNasfilesDrag(e.dataTransfer)) return;
         if (!hasExternalFileDrag(e.dataTransfer)) return;
         e.preventDefault();
         e.stopPropagation();
+        markExternalDropHandled(e.nativeEvent);
         resetDragState();
+        if (!canUpload) {
+          setDragStatus("reject");
+          window.setTimeout(resetDragState, 900);
+          return;
+        }
         const files = getExternalDropFiles(e.dataTransfer);
+        if (files.length === 0) {
+          setDragStatus("reject");
+          window.setTimeout(resetDragState, 900);
+          return;
+        }
         await uploadFiles(files);
       },
       [canUpload, resetDragState, uploadFiles],
@@ -218,6 +307,7 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
 
     return (
       <div
+        ref={containerRef}
         style={{
           position: "relative",
           flex: 1,
@@ -242,13 +332,20 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
 
         {children}
 
-        {isDragging && (
+        {dragStatus && (
           <div
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(59, 130, 246, 0.08)",
-              border: "2px dashed var(--color-accent)",
+              background:
+                dragStatus === "accept"
+                  ? "rgba(59, 130, 246, 0.08)"
+                  : "rgba(239, 68, 68, 0.1)",
+              border: `2px dashed ${
+                dragStatus === "accept"
+                  ? "var(--color-accent)"
+                  : "var(--color-danger)"
+              }`,
               borderRadius: "var(--radius-lg)",
               display: "flex",
               flexDirection: "column",
@@ -261,19 +358,26 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
             className="fade-in"
           >
             <Icon
-              name="folder"
+              name={dragStatus === "accept" ? "folder" : "alertTriangle"}
               size={48}
-              color="var(--color-accent)"
+              color={
+                dragStatus === "accept"
+                  ? "var(--color-accent)"
+                  : "var(--color-danger)"
+              }
               style={{ opacity: 0.7 }}
             />
             <div
               style={{
                 fontSize: "var(--text-lg)",
                 fontWeight: 600,
-                color: "var(--color-accent)",
+                color:
+                  dragStatus === "accept"
+                    ? "var(--color-accent)"
+                    : "var(--color-danger)",
               }}
             >
-              Drop to upload
+              {dragStatus === "accept" ? "Drop to upload" : "Cannot upload here"}
             </div>
             <div
               style={{
@@ -281,7 +385,9 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(
                 color: "var(--color-fg-muted)",
               }}
             >
-              Files will be uploaded to the current folder
+              {dragStatus === "accept"
+                ? "Files will be uploaded to the current folder"
+                : "This location does not accept dropped files"}
             </div>
           </div>
         )}

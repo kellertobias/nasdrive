@@ -38,6 +38,7 @@ import {
   hasNasfilesDrag,
   isDemoDropTarget,
   isSelfOrDescendantDrop,
+  markExternalDropHandled,
 } from "../lib/fileDrag";
 import { useGlobalDragCleanup } from "../lib/dragState";
 import {
@@ -544,6 +545,7 @@ function FileBrowser() {
 
       const externalFiles = getExternalDropFiles(e.dataTransfer);
       if (externalFiles.length > 0) {
+        markExternalDropHandled(e.nativeEvent);
         uploadZoneRef.current?.uploadTo(targetRoot, targetPath, externalFiles);
         return;
       }
