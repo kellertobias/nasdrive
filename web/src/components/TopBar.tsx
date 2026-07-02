@@ -238,6 +238,7 @@ export function TopBar({ user }: TopBarProps) {
 
   return (
     <header
+      className="app-topbar"
       style={{
         display: "flex",
         alignItems: "center",
@@ -295,6 +296,7 @@ export function TopBar({ user }: TopBarProps) {
       {user && (
         <div
           ref={searchRef}
+          className="app-topbar-search"
           style={{ position: "relative", flex: "0 1 520px", minWidth: 220 }}
         >
           <div
@@ -419,7 +421,7 @@ export function TopBar({ user }: TopBarProps) {
                     : `${pausedTransferJobs.length} job${pausedTransferJobs.length === 1 ? "" : "s"} need attention`}
                 </span>
                 <span
-                  className="tabular-nums"
+                  className="app-topbar-transfer-percent tabular-nums"
                   style={{
                     fontSize: "var(--text-xs)",
                     color: "var(--color-fg-muted)",
@@ -575,7 +577,10 @@ export function TopBar({ user }: TopBarProps) {
                 {user.display_name.charAt(0).toUpperCase()}
               </div>
             )}
-            <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>
+            <span
+              className="app-topbar-user-name"
+              style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}
+            >
               {user.display_name}
             </span>
             <Icon name="chevronDown" size={14} color="var(--color-fg-subtle)" />

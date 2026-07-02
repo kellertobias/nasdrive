@@ -15,7 +15,7 @@ import { ColumnBrowser } from "../components/ColumnBrowser";
 import { TopBar } from "../components/TopBar";
 import { Breadcrumb } from "../components/Breadcrumb";
 import { EmptyState } from "../components/EmptyState";
-import { Icon } from "../components/Icon";
+import { FileIcon, Icon } from "../components/Icon";
 import { UploadZone, type UploadZoneHandle } from "../components/UploadZone";
 import { CreateFolderDialog } from "../components/CreateFolderDialog";
 import { RenameDialog } from "../components/RenameDialog";
@@ -28,6 +28,7 @@ import {
   FileDetailsPane,
   type FileDetailsSelection,
 } from "../components/FileDetailsPane";
+import { TransferProgressIndicator } from "../components/TransferProgressIndicator";
 import { ErrorDialog, ErrorToasts } from "../components/ErrorNotice";
 import type { ErrorNoticeData } from "../components/ErrorNotice";
 import { useViewStore } from "../state/view";
@@ -45,7 +46,7 @@ import {
   isActiveTransferJob,
   transferJobsForTarget,
 } from "../lib/transferJobs";
-import { formatFileSize } from "../lib/icons";
+import { formatFileSize, formatModifiedDate, getFileIcon } from "../lib/icons";
 import type { DirectoryListing, TransferJob } from "../api/client";
 
 export const Route = createFileRoute("/r/$root/$")({
@@ -146,10 +147,13 @@ function FileBrowser() {
     sidebarOpen,
     sidebarWidth,
     selectedPaths,
+    sortField,
+    sortDirection,
     setSidebarWidth,
     setViewMode,
   } = useViewStore();
   const uploadZoneRef = useRef<UploadZoneHandle>(null);
+  const mobileUploadZoneRef = useRef<UploadZoneHandle>(null);
   const listingScrollRef = useRef<HTMLDivElement>(null);
   const errorIdRef = useRef(0);
   const deleteJobIdRef = useRef(0);
@@ -854,6 +858,345 @@ function FileBrowser() {
       <TopBar user={user || null} />
 
       <div
+        className="mobile-file-browser"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "hidden",
+          display: "none",
+        }}
+      >
+        <UploadZone
+          ref={mobileUploadZoneRef}
+          root={root}
+          path={path}
+          onUploadComplete={refreshListing}
+          canUpload={caps.write}
+        >
+          <main
+            style={{
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              background: "var(--color-bg)",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gap: "var(--space-3)",
+                padding: "var(--space-3)",
+                borderBottom: "1px solid var(--color-border)",
+                background: "var(--color-bg)",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto",
+                  gap: "var(--space-2)",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <label
+                    htmlFor="mobile-root-select"
+                    style={{
+                      display: "block",
+                      marginBottom: 3,
+                      fontSize: "var(--text-xs)",
+                      color: "var(--color-fg-subtle)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Share
+                  </label>
+                  <select
+                    id="mobile-root-select"
+                    value={root}
+                    onChange={(e) => navigateToRoot(e.target.value)}
+                    style={{
+                      width: "100%",
+                      minHeight: 40,
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      background: "var(--color-bg-muted)",
+                      color: "var(--color-fg)",
+                      padding: "0 var(--space-2)",
+                      fontSize: "var(--text-sm)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {(user?.roots ?? []).map((availableRoot) => (
+                      <option key={availableRoot.key} value={availableRoot.key}>
+                        {availableRoot.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {path && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parent = path.split("/").slice(0, -1).join("/");
+                      navigateToPath(parent);
+                    }}
+                    title="Back"
+                    aria-label="Back"
+                    style={{
+                      width: 40,
+                      height: 40,
+                      alignSelf: "end",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      background: "transparent",
+                      color: "var(--color-fg-muted)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Icon name="arrowLeft" size={18} />
+                  </button>
+                )}
+              </div>
+
+              <MobilePathBar
+                rootDisplayName={currentRoot?.display_name || root}
+                path={path}
+                onNavigate={navigateToPath}
+              />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  gap: "var(--space-2)",
+                }}
+              >
+                {caps.write && (
+                  <>
+                    <MobileToolbarButton
+                      iconName="upload"
+                      label="Upload"
+                      onClick={() => mobileUploadZoneRef.current?.trigger()}
+                    />
+                    <MobileToolbarButton
+                      iconName="folder"
+                      label="Folder"
+                      onClick={() => setShowCreateFolder(true)}
+                    />
+                  </>
+                )}
+                {path && caps.share && (
+                  <MobileToolbarButton
+                    iconName="share2"
+                    label="Share"
+                    onClick={() => {
+                      setShareTarget({ path, is_dir: true });
+                      setShowShare(true);
+                    }}
+                  />
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto",
+                  gap: "var(--space-2)",
+                  alignItems: "center",
+                }}
+              >
+                <select
+                  value={`${sortField}:${sortDirection}`}
+                  onChange={(e) => {
+                    const [field, direction] = e.target.value.split(":") as [
+                      "name" | "size" | "modified_at",
+                      "asc" | "desc",
+                    ];
+                    const state = useViewStore.getState();
+                    if (state.sortField !== field) state.setSortField(field);
+                    if (useViewStore.getState().sortDirection !== direction) {
+                      state.toggleSortDirection();
+                    }
+                  }}
+                  aria-label="Sort files"
+                  style={{
+                    minHeight: 38,
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--color-bg)",
+                    color: "var(--color-fg)",
+                    padding: "0 var(--space-2)",
+                    fontSize: "var(--text-sm)",
+                  }}
+                >
+                  <option value="name:asc">Name A-Z</option>
+                  <option value="name:desc">Name Z-A</option>
+                  <option value="modified_at:desc">Newest first</option>
+                  <option value="modified_at:asc">Oldest first</option>
+                  <option value="size:desc">Largest first</option>
+                  <option value="size:asc">Smallest first</option>
+                </select>
+
+                <span
+                  style={{
+                    color: "var(--color-fg-subtle)",
+                    fontSize: "var(--text-xs)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {listing
+                    ? formatCount(listing.entries.length, "item")
+                    : isLoading
+                      ? "Loading"
+                      : ""}
+                </span>
+              </div>
+            </div>
+
+            <div
+              style={{
+                position: "relative",
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "var(--space-2) var(--space-2) 92px",
+                outline:
+                  dropTargetActive || isDemoCurrentFolderDropTarget
+                    ? "2px dashed var(--color-accent)"
+                    : "none",
+                outlineOffset: -6,
+                background:
+                  dropTargetActive || isDemoCurrentFolderDropTarget
+                    ? "var(--color-accent-muted)"
+                    : "transparent",
+              }}
+              onDragEnter={(e) => {
+                if (
+                  !caps.write ||
+                  !(
+                    hasNasfilesDrag(e.dataTransfer) ||
+                    hasExternalFileDrag(e.dataTransfer)
+                  )
+                )
+                  return;
+                e.preventDefault();
+                setDropTargetActive(true);
+              }}
+              onDragOver={(e) => {
+                if (
+                  !caps.write ||
+                  !(
+                    hasNasfilesDrag(e.dataTransfer) ||
+                    hasExternalFileDrag(e.dataTransfer)
+                  )
+                )
+                  return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = hasExternalFileDrag(e.dataTransfer)
+                  ? "copy"
+                  : "move";
+              }}
+              onDragLeave={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget as Node | null))
+                  return;
+                resetCurrentDropTarget();
+              }}
+              onDrop={(e) => {
+                if (
+                  !caps.write ||
+                  !(
+                    hasNasfilesDrag(e.dataTransfer) ||
+                    hasExternalFileDrag(e.dataTransfer)
+                  )
+                )
+                  return;
+                resetCurrentDropTarget();
+                handleFileDrop(root, path, e);
+              }}
+            >
+              {isLoading && <MobileLoadingList />}
+              {error && (
+                <EmptyState
+                  iconName="alertTriangle"
+                  title="Failed to load"
+                  description={
+                    error instanceof Error ? error.message : "Unknown error"
+                  }
+                />
+              )}
+              {listing &&
+                listing.entries.length === 0 &&
+                currentFolderTransferJobs.length === 0 && (
+                  <EmptyState
+                    iconName="folderOpen"
+                    title="This folder is empty"
+                    description="Upload files or create a folder to get started."
+                  />
+                )}
+              {listing && (
+                <MobileFileList
+                  entries={listing.entries}
+                  root={root}
+                  path={path}
+                  selectedPaths={selectedPaths}
+                  transferJobs={activeTransferJobs}
+                  onOpen={navigateTo}
+                  onSelect={(entryPath) => useViewStore.getState().select(entryPath)}
+                  onToggleSelect={(entryPath) =>
+                    useViewStore.getState().toggleSelect(entryPath)
+                  }
+                  onShowActions={(entry, x, y) => {
+                    const entryPath = path ? `${path}/${entry.name}` : entry.name;
+                    useViewStore.getState().select(entryPath);
+                    setContextMenu({ x, y, entry, parentPath: path });
+                  }}
+                />
+              )}
+              {listing && currentRoot?.usage && (
+                <FreeSpaceFooter
+                  availableBytes={currentRoot.usage.available_bytes}
+                  canShowReadme={canShowReadme}
+                  onShowReadme={() => {
+                    setReadmeHidden(false);
+                    useViewStore.getState().clearSelection();
+                  }}
+                />
+              )}
+            </div>
+
+            {selectedCount > 0 && (
+              <MobileSelectionBar
+                selectedCount={selectedCount}
+                selectionStats={selectionStats}
+                canWrite={caps.write}
+                canShare={caps.share && selectedCount === 1}
+                onClear={() => useViewStore.getState().clearSelection()}
+                onShare={() => {
+                  const selectedPath = selectedItems[0];
+                  const entry = listing?.entries.find(
+                    (candidate) =>
+                      (path ? `${path}/${candidate.name}` : candidate.name) ===
+                      selectedPath,
+                  );
+                  if (!entry) return;
+                  setShareTarget({ path: selectedPath, is_dir: entry.is_dir });
+                  setShowShare(true);
+                }}
+                onDelete={() => setShowDeleteConfirm(true)}
+              />
+            )}
+          </main>
+        </UploadZone>
+      </div>
+
+      <div
+        className="desktop-file-browser"
         style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}
       >
         {/* Sidebar */}
@@ -1774,6 +2117,441 @@ function isExtractableArchive(name: string) {
     lower.endsWith(".bz2") ||
     /\.part\d+\.rar$/.test(lower) ||
     /\.r\d\d$/.test(lower)
+  );
+}
+
+function MobilePathBar({
+  rootDisplayName,
+  path,
+  onNavigate,
+}: {
+  rootDisplayName: string;
+  path: string;
+  onNavigate: (path: string) => void;
+}) {
+  const segments = path ? path.split("/").filter(Boolean) : [];
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "var(--space-1)",
+        overflowX: "auto",
+        paddingBottom: 2,
+      }}
+      aria-label="Current path"
+    >
+      <button
+        type="button"
+        onClick={() => onNavigate("")}
+        style={mobilePathButtonStyle(!path)}
+      >
+        {rootDisplayName}
+      </button>
+      {segments.map((segment, index) => {
+        const segmentPath = segments.slice(0, index + 1).join("/");
+        const isLast = index === segments.length - 1;
+        return (
+          <button
+            key={segmentPath}
+            type="button"
+            onClick={() => onNavigate(segmentPath)}
+            style={mobilePathButtonStyle(isLast)}
+          >
+            {segment}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function mobilePathButtonStyle(active: boolean): React.CSSProperties {
+  return {
+    maxWidth: 180,
+    flexShrink: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    minHeight: 32,
+    border: `1px solid ${active ? "var(--color-accent)" : "var(--color-border)"}`,
+    borderRadius: "var(--radius-md)",
+    background: active ? "var(--color-accent-muted)" : "transparent",
+    color: active ? "var(--color-accent)" : "var(--color-fg-muted)",
+    padding: "0 var(--space-2)",
+    fontSize: "var(--text-sm)",
+    fontWeight: active ? 600 : 500,
+  };
+}
+
+function MobileToolbarButton({
+  iconName,
+  label,
+  onClick,
+}: {
+  iconName: React.ComponentProps<typeof Icon>["name"];
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        minWidth: 0,
+        minHeight: 42,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "var(--space-1)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-md)",
+        background: "transparent",
+        color: "var(--color-fg)",
+        cursor: "pointer",
+        fontSize: "var(--text-sm)",
+        fontWeight: 600,
+      }}
+    >
+      <Icon name={iconName} size={16} />
+      <span
+        style={{
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function MobileLoadingList() {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: "var(--space-2)",
+      }}
+    >
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div
+          key={index}
+          className="shimmer"
+          style={{
+            height: 64,
+            borderRadius: "var(--radius-md)",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MobileFileList({
+  entries,
+  root,
+  path,
+  selectedPaths,
+  transferJobs,
+  onOpen,
+  onSelect,
+  onToggleSelect,
+  onShowActions,
+}: {
+  entries: FileEntry[];
+  root: string;
+  path: string;
+  selectedPaths: Set<string>;
+  transferJobs: TransferJob[];
+  onOpen: (entry: FileEntry) => void;
+  onSelect: (path: string) => void;
+  onToggleSelect: (path: string) => void;
+  onShowActions: (entry: FileEntry, x: number, y: number) => void;
+}) {
+  const { sortField, sortDirection } = useViewStore();
+  const sortedEntries = useMemo(
+    () =>
+      [...entries].sort((a, b) => {
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+        let cmp = 0;
+        if (sortField === "name") {
+          cmp = a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+          });
+        } else if (sortField === "size") {
+          cmp = a.size - b.size;
+        } else {
+          cmp = a.modified_at - b.modified_at;
+        }
+        return sortDirection === "asc" ? cmp : -cmp;
+      }),
+    [entries, sortDirection, sortField],
+  );
+
+  return (
+    <div
+      role="list"
+      aria-label="Files"
+      style={{
+        display: "grid",
+        gap: "var(--space-1)",
+      }}
+    >
+      {sortedEntries.map((entry) => {
+        const filePath = path ? `${path}/${entry.name}` : entry.name;
+        const selected = selectedPaths.has(filePath);
+        const icon = getFileIcon(entry);
+        const entryTransferJobs = entry.is_dir
+          ? transferJobsForTarget(transferJobs, root, filePath)
+          : [];
+
+        return (
+          <div
+            key={entry.name}
+            role="listitem"
+            aria-selected={selected}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "44px minmax(0, 1fr) 40px",
+              alignItems: "center",
+              minHeight: 64,
+              gap: "var(--space-1)",
+              border: `1px solid ${selected ? "var(--color-accent)" : "transparent"}`,
+              borderRadius: "var(--radius-md)",
+              background: selected
+                ? "var(--color-accent-muted)"
+                : "transparent",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => onToggleSelect(filePath)}
+              aria-label={selected ? "Deselect item" : "Select item"}
+              style={{
+                width: 44,
+                height: 56,
+                border: "none",
+                background: "transparent",
+                color: selected
+                  ? "var(--color-accent)"
+                  : "var(--color-fg-subtle)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Icon name={selected ? "checkCircle" : "file"} size={18} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onSelect(filePath);
+                onOpen(entry);
+              }}
+              style={{
+                minWidth: 0,
+                minHeight: 62,
+                display: "grid",
+                gridTemplateColumns: "32px minmax(0, 1fr)",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                border: "none",
+                background: "transparent",
+                color: "var(--color-fg)",
+                textAlign: "left",
+              }}
+            >
+              <span style={{ position: "relative", display: "inline-flex" }}>
+                <FileIcon svg={icon.svg} color={icon.color} size={28} />
+                <span style={{ position: "absolute", right: -8, top: -7 }}>
+                  <TransferProgressIndicator jobs={entryTransferJobs} compact />
+                </span>
+              </span>
+              <span style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    display: "block",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: "var(--text-sm)",
+                    fontWeight: entry.is_dir ? 600 : 500,
+                  }}
+                >
+                  {entry.name}
+                </span>
+                <span
+                  className="tabular-nums"
+                  style={{
+                    display: "block",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    marginTop: 2,
+                    fontSize: "var(--text-xs)",
+                    color: "var(--color-fg-subtle)",
+                  }}
+                >
+                  {entry.is_dir
+                    ? entry.item_count != null
+                      ? formatCount(entry.item_count, "item")
+                      : "Folder"
+                    : formatFileSize(entry.size)}
+                  {" · "}
+                  {formatModifiedDate(entry.modified_at)}
+                </span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              aria-label="More actions"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                onShowActions(entry, rect.right - 220, rect.bottom + 4);
+              }}
+              style={{
+                width: 40,
+                height: 56,
+                border: "none",
+                background: "transparent",
+                color: "var(--color-fg-subtle)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Icon name="chevronDown" size={16} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MobileSelectionBar({
+  selectedCount,
+  selectionStats,
+  canWrite,
+  canShare,
+  onClear,
+  onShare,
+  onDelete,
+}: {
+  selectedCount: number;
+  selectionStats: { totalSize: number; knownSize: boolean } | null;
+  canWrite: boolean;
+  canShare: boolean;
+  onClear: () => void;
+  onShare: () => void;
+  onDelete: () => void;
+}) {
+  const sizeLabel = selectionStats
+    ? selectionStats.knownSize
+      ? formatFileSize(selectionStats.totalSize)
+      : selectionStats.totalSize > 0
+        ? `~${formatFileSize(selectionStats.totalSize)}`
+        : "Calculating"
+    : "";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: "var(--space-2)",
+        right: "var(--space-2)",
+        bottom: "var(--space-2)",
+        zIndex: 40,
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
+        alignItems: "center",
+        gap: "var(--space-1)",
+        padding: "var(--space-2)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-lg)",
+        background: "var(--color-bg)",
+        boxShadow: "var(--shadow-lg)",
+      }}
+    >
+      <div style={{ minWidth: 0, padding: "0 var(--space-1)" }}>
+        <div
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: "var(--text-sm)",
+            fontWeight: 700,
+          }}
+        >
+          {formatCount(selectedCount, "item")}
+        </div>
+        {sizeLabel && (
+          <div
+            className="tabular-nums"
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              color: "var(--color-fg-subtle)",
+              fontSize: "var(--text-xs)",
+            }}
+          >
+            {sizeLabel}
+          </div>
+        )}
+      </div>
+      {canShare && (
+        <MobileIconButton iconName="share2" label="Share" onClick={onShare} />
+      )}
+      {canWrite && (
+        <MobileIconButton
+          iconName="alertTriangle"
+          label="Delete"
+          danger
+          onClick={onDelete}
+        />
+      )}
+      <MobileIconButton iconName="x" label="Clear" onClick={onClear} />
+    </div>
+  );
+}
+
+function MobileIconButton({
+  iconName,
+  label,
+  danger = false,
+  onClick,
+}: {
+  iconName: React.ComponentProps<typeof Icon>["name"];
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      style={{
+        width: 42,
+        height: 42,
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-md)",
+        background: "transparent",
+        color: danger ? "var(--color-danger)" : "var(--color-fg)",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Icon name={iconName} size={17} />
+    </button>
   );
 }
 

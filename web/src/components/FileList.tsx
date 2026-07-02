@@ -1,10 +1,9 @@
 import type { FileEntry } from "../api/client";
-import api from "../api/client";
 import { getFileIcon, formatFileSize, formatModifiedDate } from "../lib/icons";
 import { useViewStore } from "../state/view";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 import { FileIcon } from "./Icon";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   entryPath,
@@ -72,27 +71,6 @@ export function FileList({
   const lastClickedIndex = useRef<number>(-1);
   const listRef = useRef<HTMLDivElement>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [dirSizes, setDirSizes] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    setDirSizes({});
-    const dirPaths = entries
-      .filter((e) => e.is_dir)
-      .map((e) => entryPath(path, e.name));
-    if (!root || dirPaths.length === 0) return;
-
-    let cancelled = false;
-    api
-      .folderSizes(root, dirPaths)
-      .then((result) => {
-        if (!cancelled) setDirSizes(result.sizes);
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [root, path, entries]);
   const resetDropTarget = useCallback(() => setDropTarget(null), []);
   const transferPlaceholders = incomingTransferPlaceholders(
     transferJobs,

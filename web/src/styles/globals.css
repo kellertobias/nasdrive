@@ -148,3 +148,45 @@ time,
   display: flex;
   flex-direction: column;
 }
+
+@media (max-width: 720px) {
+  .desktop-file-browser {
+    display: none !important;
+  }
+
+  .mobile-file-browser {
+    display: flex !important;
+    flex-direction: column;
+  }
+
+  .app-topbar {
+    height: auto !important;
+    min-height: 52px;
+    padding: var(--space-2) var(--space-3) !important;
+    gap: var(--space-2) !important;
+    flex-wrap: wrap;
+  }
+
+  .app-topbar-search {
+    order: 10;
+    flex: 1 0 100% !important;
+    min-width: 0 !important;
+  }
+
+  .app-topbar-user-name {
+    display: none;
+  }
+
+  .app-topbar [aria-haspopup='menu'] {
+    min-width: 40px !important;
+    max-width: 44px !important;
+    height: 36px;
+    justify-content: center;
+  }
+
+  .app-topbar [aria-haspopup='menu'] > div,
+  .app-topbar [aria-haspopup='menu'] > .app-topbar-transfer-percent,
+  .app-topbar [aria-haspopup='menu'] > svg:last-child {
+    display: none;
+  }
+}
