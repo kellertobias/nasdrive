@@ -164,6 +164,9 @@ function FileBrowser() {
   const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileCreateMenuOpen, setMobileCreateMenuOpen] = useState(false);
+  const [mobileSortMenuOpen, setMobileSortMenuOpen] = useState(false);
   const [shareTarget, setShareTarget] = useState<{
     path: string;
     is_dir: boolean;
@@ -435,6 +438,17 @@ function FileBrowser() {
       setViewMode(mode);
     },
     [columnActiveFolderPath, navigateToPath, path, setViewMode, viewMode],
+  );
+
+  const setSortOption = useCallback(
+    (field: "name" | "size" | "modified_at", direction: "asc" | "desc") => {
+      const state = useViewStore.getState();
+      if (state.sortField !== field) state.setSortField(field);
+      if (useViewStore.getState().sortDirection !== direction) {
+        state.toggleSortDirection();
+      }
+    },
+    [],
   );
 
   const startSidebarResize = useCallback(
@@ -711,7 +725,7 @@ function FileBrowser() {
 
       items.push({
         label: "Delete",
-        iconName: "alertTriangle",
+        iconName: "trash",
         onClick: () => {
           useViewStore.getState().select(entryPath);
           setShowDeleteConfirm(true);
@@ -823,15 +837,14 @@ function FileBrowser() {
     );
   }, [listing?.entries, path, previewTarget, queryClient, root]);
   const selectedDetails: FileDetailsSelection | null = useMemo(() => {
-    if (viewMode === "columns" || selectedPaths.size !== 1 || !listing)
-      return null;
+    if (selectedPaths.size !== 1 || !listing) return null;
     const selectedPath = Array.from(selectedPaths)[0];
     const entry = listing.entries.find((candidate) => {
       const candidatePath = path ? `${path}/${candidate.name}` : candidate.name;
       return candidatePath === selectedPath;
     });
     return entry ? { entry, parentPath: path, path: selectedPath } : null;
-  }, [listing, path, selectedPaths, viewMode]);
+  }, [listing, path, selectedPaths]);
   const hasReadme = Boolean(listing?.entries.some(isReadmeEntry));
   const readmeShown = viewMode !== "columns" && hasReadme && !readmeHidden;
   const canShowReadme = viewMode !== "columns" && hasReadme && !readmeShown;
@@ -855,7 +868,10 @@ function FileBrowser() {
       onKeyDown={handleKeyDown}
       tabIndex={-1}
     >
-      <TopBar user={user || null} />
+      <TopBar
+        user={user || null}
+        onMobileSidebarToggle={() => setMobileSidebarOpen((open) => !open)}
+      />
 
       <div
         className="mobile-file-browser"
@@ -884,85 +900,24 @@ function FileBrowser() {
           >
             <div
               style={{
-                display: "grid",
-                gap: "var(--space-3)",
-                padding: "var(--space-3)",
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                padding: "var(--space-2)",
                 borderBottom: "1px solid var(--color-border)",
                 background: "var(--color-bg)",
               }}
             >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) auto",
-                  gap: "var(--space-2)",
-                  alignItems: "center",
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <label
-                    htmlFor="mobile-root-select"
-                    style={{
-                      display: "block",
-                      marginBottom: 3,
-                      fontSize: "var(--text-xs)",
-                      color: "var(--color-fg-subtle)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Share
-                  </label>
-                  <select
-                    id="mobile-root-select"
-                    value={root}
-                    onChange={(e) => navigateToRoot(e.target.value)}
-                    style={{
-                      width: "100%",
-                      minHeight: 40,
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-md)",
-                      background: "var(--color-bg-muted)",
-                      color: "var(--color-fg)",
-                      padding: "0 var(--space-2)",
-                      fontSize: "var(--text-sm)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {(user?.roots ?? []).map((availableRoot) => (
-                      <option key={availableRoot.key} value={availableRoot.key}>
-                        {availableRoot.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {path && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const parent = path.split("/").slice(0, -1).join("/");
-                      navigateToPath(parent);
-                    }}
-                    title="Back"
-                    aria-label="Back"
-                    style={{
-                      width: 40,
-                      height: 40,
-                      alignSelf: "end",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-md)",
-                      background: "transparent",
-                      color: "var(--color-fg-muted)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <Icon name="arrowLeft" size={18} />
-                  </button>
-                )}
-              </div>
+              {path && (
+                <MobileIconButton
+                  iconName="arrowLeft"
+                  label="Back"
+                  onClick={() => {
+                    const parent = path.split("/").slice(0, -1).join("/");
+                    navigateToPath(parent);
+                  }}
+                />
+              )}
 
               <MobilePathBar
                 rootDisplayName={currentRoot?.display_name || root}
@@ -970,93 +925,57 @@ function FileBrowser() {
                 onNavigate={navigateToPath}
               />
 
-              <div
+              <span
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                  gap: "var(--space-2)",
+                  color: "var(--color-fg-subtle)",
+                  fontSize: "var(--text-xs)",
+                  whiteSpace: "nowrap",
                 }}
               >
-                {caps.write && (
-                  <>
-                    <MobileToolbarButton
-                      iconName="upload"
-                      label="Upload"
-                      onClick={() => mobileUploadZoneRef.current?.trigger()}
-                    />
-                    <MobileToolbarButton
-                      iconName="folder"
-                      label="Folder"
-                      onClick={() => setShowCreateFolder(true)}
-                    />
-                  </>
-                )}
-                {path && caps.share && (
-                  <MobileToolbarButton
-                    iconName="share2"
-                    label="Share"
-                    onClick={() => {
-                      setShareTarget({ path, is_dir: true });
-                      setShowShare(true);
-                    }}
-                  />
-                )}
-              </div>
+                {listing
+                  ? formatCount(listing.entries.length, "item")
+                  : isLoading
+                    ? "Loading"
+                    : ""}
+              </span>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) auto",
-                  gap: "var(--space-2)",
-                  alignItems: "center",
+              {caps.write && (
+                <MobileMenuButton
+                  iconName="plus"
+                  label="Create"
+                  open={mobileCreateMenuOpen}
+                  onToggle={() => {
+                    setMobileCreateMenuOpen((open) => !open);
+                    setMobileSortMenuOpen(false);
+                  }}
+                  items={[
+                    {
+                      iconName: "upload",
+                      label: "Upload",
+                      onClick: () => mobileUploadZoneRef.current?.trigger(),
+                    },
+                    {
+                      iconName: "folder",
+                      label: "New folder",
+                      onClick: () => setShowCreateFolder(true),
+                    },
+                  ]}
+                />
+              )}
+
+              <MobileSortMenu
+                open={mobileSortMenuOpen}
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onToggle={() => {
+                  setMobileSortMenuOpen((open) => !open);
+                  setMobileCreateMenuOpen(false);
                 }}
-              >
-                <select
-                  value={`${sortField}:${sortDirection}`}
-                  onChange={(e) => {
-                    const [field, direction] = e.target.value.split(":") as [
-                      "name" | "size" | "modified_at",
-                      "asc" | "desc",
-                    ];
-                    const state = useViewStore.getState();
-                    if (state.sortField !== field) state.setSortField(field);
-                    if (useViewStore.getState().sortDirection !== direction) {
-                      state.toggleSortDirection();
-                    }
-                  }}
-                  aria-label="Sort files"
-                  style={{
-                    minHeight: 38,
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius-md)",
-                    background: "var(--color-bg)",
-                    color: "var(--color-fg)",
-                    padding: "0 var(--space-2)",
-                    fontSize: "var(--text-sm)",
-                  }}
-                >
-                  <option value="name:asc">Name A-Z</option>
-                  <option value="name:desc">Name Z-A</option>
-                  <option value="modified_at:desc">Newest first</option>
-                  <option value="modified_at:asc">Oldest first</option>
-                  <option value="size:desc">Largest first</option>
-                  <option value="size:asc">Smallest first</option>
-                </select>
-
-                <span
-                  style={{
-                    color: "var(--color-fg-subtle)",
-                    fontSize: "var(--text-xs)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {listing
-                    ? formatCount(listing.entries.length, "item")
-                    : isLoading
-                      ? "Loading"
-                      : ""}
-                </span>
-              </div>
+                onSelect={(field, direction) => {
+                  setSortOption(field, direction);
+                  setMobileSortMenuOpen(false);
+                }}
+              />
             </div>
 
             <div
@@ -1065,7 +984,9 @@ function FileBrowser() {
                 flex: 1,
                 minHeight: 0,
                 overflowY: "auto",
-                padding: "var(--space-2) var(--space-2) 92px",
+                padding: `var(--space-2) var(--space-2) ${
+                  selectedCount > 0 ? "360px" : "92px"
+                }`,
                 outline:
                   dropTargetActive || isDemoCurrentFolderDropTarget
                     ? "2px dashed var(--color-accent)"
@@ -1171,28 +1092,50 @@ function FileBrowser() {
             </div>
 
             {selectedCount > 0 && (
-              <MobileSelectionBar
+              <MobileSelectionDrawer
+                root={root}
+                rootDisplayName={currentRoot?.display_name || root}
+                selected={selectedDetails}
                 selectedCount={selectedCount}
                 selectionStats={selectionStats}
                 canWrite={caps.write}
-                canShare={caps.share && selectedCount === 1}
+                canShare={caps.share && Boolean(selectedDetails)}
                 onClear={() => useViewStore.getState().clearSelection()}
                 onShare={() => {
-                  const selectedPath = selectedItems[0];
-                  const entry = listing?.entries.find(
-                    (candidate) =>
-                      (path ? `${path}/${candidate.name}` : candidate.name) ===
-                      selectedPath,
-                  );
-                  if (!entry) return;
-                  setShareTarget({ path: selectedPath, is_dir: entry.is_dir });
+                  if (!selectedDetails) return;
+                  setShareTarget({
+                    path: selectedDetails.path,
+                    is_dir: selectedDetails.entry.is_dir,
+                  });
                   setShowShare(true);
                 }}
+                onPreview={(entry, parentPath) =>
+                  setPreviewTarget({ entry, parentPath })
+                }
                 onDelete={() => setShowDeleteConfirm(true)}
               />
             )}
           </main>
         </UploadZone>
+
+        {mobileSidebarOpen && user && (
+          <MobileSidebarDrawer
+            roots={user.roots}
+            activeRoot={root}
+            activePath={path}
+            customLinks={user.custom_links}
+            transferJobs={activeTransferJobs}
+            onClose={() => setMobileSidebarOpen(false)}
+            onDropFiles={handleFileDrop}
+            onNavigate={(rootKey, folderPath) => {
+              setMobileSidebarOpen(false);
+              navigate({
+                to: "/r/$root/$",
+                params: { root: rootKey, _splat: folderPath },
+              });
+            }}
+          />
+        )}
       </div>
 
       <div
@@ -1438,7 +1381,7 @@ function FileBrowser() {
                     e.currentTarget.style.color = "var(--color-fg-muted)";
                   }}
                 >
-                  <Icon name="alertTriangle" size={14} />
+                  <Icon name="trash" size={14} />
                   Delete ({selectedCount})
                 </button>
               )}
@@ -1823,7 +1766,7 @@ function FileBrowser() {
               }}
             >
               <Icon
-                name="alertTriangle"
+                name="trash"
                 size={20}
                 color="var(--color-danger)"
               />
@@ -2120,6 +2063,73 @@ function isExtractableArchive(name: string) {
   );
 }
 
+function MobileSidebarDrawer({
+  roots,
+  activeRoot,
+  activePath,
+  customLinks,
+  transferJobs,
+  onNavigate,
+  onDropFiles,
+  onClose,
+}: {
+  roots: React.ComponentProps<typeof FolderTree>["roots"];
+  activeRoot: string;
+  activePath: string;
+  customLinks: React.ComponentProps<typeof FolderTree>["customLinks"];
+  transferJobs: TransferJob[];
+  onNavigate: (rootKey: string, folderPath: string) => void;
+  onDropFiles: React.ComponentProps<typeof FolderTree>["onDropFiles"];
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fade-in"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        background: "rgba(0,0,0,0.42)",
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <aside
+        aria-label="Shares"
+        style={{
+          width: "min(84vw, 320px)",
+          height: "100%",
+          padding: "var(--space-2) 0",
+          borderRight: "1px solid var(--color-border)",
+          background: "var(--color-sidebar-bg)",
+          boxShadow: "var(--shadow-lg)",
+          overflowY: "auto",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            padding: "0 var(--space-2) var(--space-1)",
+          }}
+        >
+          <MobileIconButton iconName="x" label="Close" onClick={onClose} />
+        </div>
+        <FolderTree
+          roots={roots}
+          activeRoot={activeRoot}
+          activePath={activePath}
+          onDropFiles={onDropFiles}
+          transferJobs={transferJobs}
+          customLinks={customLinks}
+          onNavigate={onNavigate}
+        />
+      </aside>
+    </div>
+  );
+}
+
 function MobilePathBar({
   rootDisplayName,
   path,
@@ -2136,6 +2146,8 @@ function MobilePathBar({
       style={{
         display: "flex",
         gap: "var(--space-1)",
+        flex: 1,
+        minWidth: 0,
         overflowX: "auto",
         paddingBottom: 2,
       }}
@@ -2184,47 +2196,284 @@ function mobilePathButtonStyle(active: boolean): React.CSSProperties {
   };
 }
 
-function MobileToolbarButton({
+function MobileMenuButton({
   iconName,
   label,
-  onClick,
+  open,
+  onToggle,
+  items,
 }: {
   iconName: React.ComponentProps<typeof Icon>["name"];
   label: string;
-  onClick: () => void;
+  open: boolean;
+  onToggle: () => void;
+  items: Array<{
+    iconName: React.ComponentProps<typeof Icon>["name"];
+    label: string;
+    onClick: () => void;
+  }>;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div style={{ position: "relative" }}>
+      <MobileIconButton iconName={iconName} label={label} onClick={onToggle} />
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "calc(100% + var(--space-1))",
+            zIndex: 50,
+            minWidth: 180,
+            padding: "var(--space-1)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--color-bg)",
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                item.onClick();
+                onToggle();
+              }}
+              style={mobileMenuItemStyle}
+            >
+              <Icon name={item.iconName} size={16} />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileSortMenu({
+  open,
+  sortField,
+  sortDirection,
+  onToggle,
+  onSelect,
+}: {
+  open: boolean;
+  sortField: "name" | "size" | "modified_at";
+  sortDirection: "asc" | "desc";
+  onToggle: () => void;
+  onSelect: (
+    field: "name" | "size" | "modified_at",
+    direction: "asc" | "desc",
+  ) => void;
+}) {
+  const options: Array<{
+    label: string;
+    field: "name" | "size" | "modified_at";
+    direction: "asc" | "desc";
+  }> = [
+    { label: "Name A-Z", field: "name", direction: "asc" },
+    { label: "Name Z-A", field: "name", direction: "desc" },
+    { label: "Newest first", field: "modified_at", direction: "desc" },
+    { label: "Oldest first", field: "modified_at", direction: "asc" },
+    { label: "Largest first", field: "size", direction: "desc" },
+    { label: "Smallest first", field: "size", direction: "asc" },
+  ];
+
+  return (
+    <div style={{ position: "relative" }}>
+      <MobileIconButton iconName="sliders" label="Sort" onClick={onToggle} />
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "calc(100% + var(--space-1))",
+            zIndex: 50,
+            minWidth: 190,
+            padding: "var(--space-1)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--color-bg)",
+            boxShadow: "var(--shadow-lg)",
+          }}
+        >
+          {options.map((option) => {
+            const active =
+              sortField === option.field && sortDirection === option.direction;
+            return (
+              <button
+                key={`${option.field}:${option.direction}`}
+                type="button"
+                role="menuitemradio"
+                aria-checked={active}
+                onClick={() => onSelect(option.field, option.direction)}
+                style={{
+                  ...mobileMenuItemStyle,
+                  color: active ? "var(--color-accent)" : "var(--color-fg)",
+                  fontWeight: active ? 700 : 500,
+                }}
+              >
+                <Icon name={active ? "check" : "file"} size={16} />
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const mobileMenuItemStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 38,
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "0 var(--space-2)",
+  border: "none",
+  borderRadius: "var(--radius-sm)",
+  background: "transparent",
+  color: "var(--color-fg)",
+  cursor: "pointer",
+  fontSize: "var(--text-sm)",
+  textAlign: "left",
+};
+
+function MobileSelectionDrawer({
+  root,
+  rootDisplayName,
+  selected,
+  selectedCount,
+  selectionStats,
+  canWrite,
+  canShare,
+  onClear,
+  onShare,
+  onPreview,
+  onDelete,
+}: {
+  root: string;
+  rootDisplayName: string;
+  selected: FileDetailsSelection | null;
+  selectedCount: number;
+  selectionStats: { totalSize: number; knownSize: boolean } | null;
+  canWrite: boolean;
+  canShare: boolean;
+  onClear: () => void;
+  onShare: () => void;
+  onPreview: (entry: FileEntry, parentPath: string) => void;
+  onDelete: () => void;
+}) {
+  const fullPath = selected?.path
+    ? `${rootDisplayName}/${selected.path}`
+    : rootDisplayName;
+  const sizeLabel = selectionStats
+    ? selectionStats.knownSize
+      ? formatFileSize(selectionStats.totalSize)
+      : selectionStats.totalSize > 0
+        ? `~${formatFileSize(selectionStats.totalSize)}`
+        : "Calculating"
+    : "";
+
+  return (
+    <div
       style={{
-        minWidth: 0,
-        minHeight: 42,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "var(--space-1)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-md)",
-        background: "transparent",
-        color: "var(--color-fg)",
-        cursor: "pointer",
-        fontSize: "var(--text-sm)",
-        fontWeight: 600,
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 40,
+        display: "flex",
+        flexDirection: "column",
+        maxHeight: "min(56vh, 360px)",
+        borderTop: "1px solid var(--color-border)",
+        borderTopLeftRadius: "var(--radius-lg)",
+        borderTopRightRadius: "var(--radius-lg)",
+        background: "var(--color-bg)",
+        boxShadow: "var(--shadow-lg)",
+        overflow: "hidden",
       }}
     >
-      <Icon name={iconName} size={16} />
-      <span
+      <div
         style={{
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
+          alignItems: "center",
+          gap: "var(--space-1)",
+          padding: "var(--space-2)",
+          borderBottom: "1px solid var(--color-border)",
         }}
       >
-        {label}
-      </span>
-    </button>
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontSize: "var(--text-xs)",
+              color: "var(--color-fg-subtle)",
+            }}
+            title={fullPath}
+          >
+            {selected ? fullPath : `${formatCount(selectedCount, "item")} selected`}
+          </div>
+          {sizeLabel && (
+            <div
+              className="tabular-nums"
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                color: "var(--color-fg-muted)",
+                fontSize: "var(--text-xs)",
+                marginTop: 2,
+              }}
+            >
+              {sizeLabel}
+            </div>
+          )}
+        </div>
+        {canShare && (
+          <MobileIconButton iconName="share2" label="Share" onClick={onShare} />
+        )}
+        {canWrite && (
+          <MobileIconButton
+            iconName="trash"
+            label="Delete"
+            danger
+            onClick={onDelete}
+          />
+        )}
+        <MobileIconButton iconName="x" label="Clear" onClick={onClear} />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        {selected ? (
+          <FileDetailsPane
+            root={root}
+            selected={selected}
+            width="100%"
+            title="Selected"
+            onPreview={onPreview}
+            onClose={onClear}
+          />
+        ) : (
+          <div
+            style={{
+              padding: "var(--space-5)",
+              color: "var(--color-fg-muted)",
+              fontSize: "var(--text-sm)",
+            }}
+          >
+            {formatCount(selectedCount, "item")} selected
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -2349,8 +2598,11 @@ function MobileFileList({
             <button
               type="button"
               onClick={() => {
+                if (entry.is_dir) {
+                  onOpen(entry);
+                  return;
+                }
                 onSelect(filePath);
-                onOpen(entry);
               }}
               style={{
                 minWidth: 0,
@@ -2425,98 +2677,11 @@ function MobileFileList({
                 justifyContent: "center",
               }}
             >
-              <Icon name="chevronDown" size={16} />
+              <Icon name="moreVertical" size={16} />
             </button>
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function MobileSelectionBar({
-  selectedCount,
-  selectionStats,
-  canWrite,
-  canShare,
-  onClear,
-  onShare,
-  onDelete,
-}: {
-  selectedCount: number;
-  selectionStats: { totalSize: number; knownSize: boolean } | null;
-  canWrite: boolean;
-  canShare: boolean;
-  onClear: () => void;
-  onShare: () => void;
-  onDelete: () => void;
-}) {
-  const sizeLabel = selectionStats
-    ? selectionStats.knownSize
-      ? formatFileSize(selectionStats.totalSize)
-      : selectionStats.totalSize > 0
-        ? `~${formatFileSize(selectionStats.totalSize)}`
-        : "Calculating"
-    : "";
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        left: "var(--space-2)",
-        right: "var(--space-2)",
-        bottom: "var(--space-2)",
-        zIndex: 40,
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
-        alignItems: "center",
-        gap: "var(--space-1)",
-        padding: "var(--space-2)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-lg)",
-        background: "var(--color-bg)",
-        boxShadow: "var(--shadow-lg)",
-      }}
-    >
-      <div style={{ minWidth: 0, padding: "0 var(--space-1)" }}>
-        <div
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            fontSize: "var(--text-sm)",
-            fontWeight: 700,
-          }}
-        >
-          {formatCount(selectedCount, "item")}
-        </div>
-        {sizeLabel && (
-          <div
-            className="tabular-nums"
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              color: "var(--color-fg-subtle)",
-              fontSize: "var(--text-xs)",
-            }}
-          >
-            {sizeLabel}
-          </div>
-        )}
-      </div>
-      {canShare && (
-        <MobileIconButton iconName="share2" label="Share" onClick={onShare} />
-      )}
-      {canWrite && (
-        <MobileIconButton
-          iconName="alertTriangle"
-          label="Delete"
-          danger
-          onClick={onDelete}
-        />
-      )}
-      <MobileIconButton iconName="x" label="Clear" onClick={onClear} />
     </div>
   );
 }
@@ -2604,7 +2769,7 @@ function OperationProgressToasts({
       {deleteJobs.map((job) => (
         <OperationProgressToast
           key={`delete-${job.id}`}
-          iconName="alertTriangle"
+          iconName="trash"
           title={`Deleting ${formatCount(job.count, "file")}`}
           detail="Removing from this share"
           indeterminate

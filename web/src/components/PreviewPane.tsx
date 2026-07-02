@@ -145,13 +145,16 @@ export function PreviewPane({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0, 0, 0, 0.85)",
+        background: "#000",
         display: "flex",
         flexDirection: "column",
         zIndex: 200,
       }}
       className="fade-in"
       onClickCapture={(e) => {
+        if ((e.target as Element | null)?.closest("[data-preview-no-close]")) {
+          return;
+        }
         if (
           isMediaPreview &&
           shouldCloseFromPreviewBackdropClick(
@@ -197,6 +200,8 @@ export function PreviewPane({
           padding: "var(--space-3) var(--space-4)",
           color: "#fff",
           flexShrink: 0,
+          position: "relative",
+          zIndex: 3,
         }}
       >
         <div

@@ -13,6 +13,7 @@ import { transferProgressPercent } from "../lib/transferJobs";
 interface TopBarProps {
   user: UserInfo | null;
   currentRoot?: string;
+  onMobileSidebarToggle?: () => void;
 }
 
 function estimateRemainingMs(
@@ -54,7 +55,7 @@ function formatRemainingTime(ms: number | null) {
   return restMinutes > 0 ? `${hours}h ${restMinutes}m left` : `${hours}h left`;
 }
 
-export function TopBar({ user }: TopBarProps) {
+export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
   const { toggleSidebar } = useViewStore();
   const navigate = useNavigate();
   const pathname = useRouterState({
@@ -85,6 +86,14 @@ export function TopBar({ user }: TopBarProps) {
   };
 
   const handleMenuClick = () => {
+    if (
+      hasSidebar &&
+      onMobileSidebarToggle &&
+      window.matchMedia("(max-width: 720px)").matches
+    ) {
+      onMobileSidebarToggle();
+      return;
+    }
     if (hasSidebar) {
       toggleSidebar();
       return;
