@@ -2526,9 +2526,9 @@ function MobileSelectionDrawer({
             root={root}
             selected={selected}
             width="100%"
+            flush
             title="Selected"
             onPreview={onPreview}
-            onClose={() => onStateChange("closed")}
           />
         ) : (
           <div

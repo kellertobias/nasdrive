@@ -159,6 +159,10 @@ time,
     flex-direction: column;
   }
 
+  .preview-pane {
+    --preview-content-radius: 0px;
+  }
+
   .app-topbar {
     height: auto !important;
     min-height: 52px;

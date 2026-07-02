@@ -21,6 +21,7 @@ interface FileDetailsPaneProps {
   selected: FileDetailsSelection | null;
   width?: number | string;
   sticky?: boolean;
+  flush?: boolean;
   title?: string;
   onPreview?: (entry: FileEntry, parentPath: string) => void;
   onClose?: () => void;
@@ -31,6 +32,7 @@ export function FileDetailsPane({
   selected,
   width = "100%",
   sticky = false,
+  flush = false,
   title = "Info",
   onPreview,
   onClose,
@@ -102,10 +104,12 @@ export function FileDetailsPane({
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        borderLeft: sticky ? "1px solid var(--color-border)" : undefined,
-        border: sticky ? undefined : "1px solid var(--color-border)",
-        borderRadius: sticky ? 0 : "var(--radius-lg)",
-        background: sticky ? "var(--color-bg)" : "var(--color-bg-subtle)",
+        borderLeft:
+          sticky && !flush ? "1px solid var(--color-border)" : undefined,
+        border: sticky || flush ? undefined : "1px solid var(--color-border)",
+        borderRadius: sticky || flush ? 0 : "var(--radius-lg)",
+        background:
+          sticky || flush ? "var(--color-bg)" : "var(--color-bg-subtle)",
         overflowY: "auto",
       }}
     >
@@ -150,7 +154,7 @@ export function FileDetailsPane({
           <div
             style={{
               aspectRatio: "4 / 3",
-              borderRadius: "var(--radius-md)",
+              borderRadius: flush ? 0 : "var(--radius-md)",
               background: "var(--color-bg-muted)",
               display: "flex",
               alignItems: "center",

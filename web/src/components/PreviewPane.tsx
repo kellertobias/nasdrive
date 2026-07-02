@@ -150,7 +150,7 @@ export function PreviewPane({
         flexDirection: "column",
         zIndex: 200,
       }}
-      className="fade-in"
+      className="preview-pane fade-in"
       onClickCapture={(e) => {
         if ((e.target as Element | null)?.closest("[data-preview-no-close]")) {
           return;
@@ -625,7 +625,7 @@ function TextPreview({ url, name }: { url: string; name: string }) {
         overflow: "hidden",
         background: "#272822",
         border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: "var(--radius-lg)",
+        borderRadius: "var(--preview-content-radius, var(--radius-lg))",
         display: "flex",
         flexDirection: "column",
       }}
@@ -663,7 +663,7 @@ function PdfPreview({ url }: { url: string; name: string }) {
         width: "100%",
         maxWidth: 900,
         height: "100%",
-        borderRadius: "var(--radius-lg)",
+        borderRadius: "var(--preview-content-radius, var(--radius-lg))",
         overflow: "hidden",
         boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
         display: "flex",
