@@ -25,6 +25,7 @@ export function Icon({ name, size = 18, color, className, style }: IconProps) {
         height: size,
         flexShrink: 0,
         color: color || "currentColor",
+        pointerEvents: "none",
         ...style,
       }}
       dangerouslySetInnerHTML={{ __html: ICONS[name] }}
@@ -55,6 +56,7 @@ export function FileIcon({ svg, color, size = 18, className }: FileIconProps) {
         height: size,
         flexShrink: 0,
         color,
+        pointerEvents: "none",
       }}
       dangerouslySetInnerHTML={{ __html: svg }}
     />

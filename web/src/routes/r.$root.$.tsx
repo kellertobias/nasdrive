@@ -58,6 +58,8 @@ interface DeleteJobNotice {
   count: number;
 }
 
+type MobileDrawerState = "closed" | "half" | "full";
+
 const SIDEBAR_WIDTH = { min: 180, max: 420 };
 const DEMO_TRANSFER_JOB_STORAGE_KEY = "nasfiles-demo-transfer-job";
 
@@ -167,6 +169,8 @@ function FileBrowser() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [mobileCreateMenuOpen, setMobileCreateMenuOpen] = useState(false);
   const [mobileSortMenuOpen, setMobileSortMenuOpen] = useState(false);
+  const [mobileDrawerState, setMobileDrawerState] =
+    useState<MobileDrawerState>("closed");
   const [shareTarget, setShareTarget] = useState<{
     path: string;
     is_dir: boolean;
@@ -771,6 +775,11 @@ function FileBrowser() {
 
   const selectedItems = Array.from(selectedPaths);
   const selectedCount = selectedItems.length;
+  const selectedItemsKey = selectedItems.join("\n");
+
+  useEffect(() => {
+    setMobileDrawerState("closed");
+  }, [selectedItemsKey]);
 
   const [selectionDirSizes, setSelectionDirSizes] = useState<
     Record<string, number>
@@ -984,9 +993,10 @@ function FileBrowser() {
                 flex: 1,
                 minHeight: 0,
                 overflowY: "auto",
-                padding: `var(--space-2) var(--space-2) ${
-                  selectedCount > 0 ? "360px" : "92px"
-                }`,
+                padding: `var(--space-2) var(--space-2) ${mobileListBottomPadding(
+                  selectedCount,
+                  mobileDrawerState,
+                )}`,
                 outline:
                   dropTargetActive || isDemoCurrentFolderDropTarget
                     ? "2px dashed var(--color-accent)"
@@ -1097,6 +1107,8 @@ function FileBrowser() {
                 rootDisplayName={currentRoot?.display_name || root}
                 selected={selectedDetails}
                 selectedCount={selectedCount}
+                state={mobileDrawerState}
+                onStateChange={setMobileDrawerState}
                 selectionStats={selectionStats}
                 canWrite={caps.write}
                 canShare={caps.share && Boolean(selectedDetails)}
@@ -2349,6 +2361,8 @@ function MobileSelectionDrawer({
   rootDisplayName,
   selected,
   selectedCount,
+  state,
+  onStateChange,
   selectionStats,
   canWrite,
   canShare,
@@ -2361,6 +2375,8 @@ function MobileSelectionDrawer({
   rootDisplayName: string;
   selected: FileDetailsSelection | null;
   selectedCount: number;
+  state: MobileDrawerState;
+  onStateChange: (state: MobileDrawerState) => void;
   selectionStats: { totalSize: number; knownSize: boolean } | null;
   canWrite: boolean;
   canShare: boolean;
@@ -2372,6 +2388,7 @@ function MobileSelectionDrawer({
   const fullPath = selected?.path
     ? `${rootDisplayName}/${selected.path}`
     : rootDisplayName;
+  const title = selected?.entry.name ?? `${formatCount(selectedCount, "item")} selected`;
   const sizeLabel = selectionStats
     ? selectionStats.knownSize
       ? formatFileSize(selectionStats.totalSize)
@@ -2390,22 +2407,62 @@ function MobileSelectionDrawer({
         zIndex: 40,
         display: "flex",
         flexDirection: "column",
-        maxHeight: "min(56vh, 360px)",
+        height:
+          state === "full"
+            ? "100dvh"
+            : state === "half"
+              ? "min(56vh, 360px)"
+              : 76,
+        maxHeight: state === "full" ? "100dvh" : undefined,
         borderTop: "1px solid var(--color-border)",
-        borderTopLeftRadius: "var(--radius-lg)",
-        borderTopRightRadius: "var(--radius-lg)",
+        borderTopLeftRadius: state === "full" ? 0 : "var(--radius-lg)",
+        borderTopRightRadius: state === "full" ? 0 : "var(--radius-lg)",
         background: "var(--color-bg)",
         boxShadow: "var(--shadow-lg)",
         overflow: "hidden",
       }}
     >
+      <button
+        type="button"
+        aria-label={
+          state === "closed"
+            ? "Open details"
+            : state === "half"
+              ? "Expand details"
+              : "Collapse details"
+        }
+        onClick={() => {
+          onStateChange(
+            state === "closed" ? "half" : state === "half" ? "full" : "half",
+          );
+        }}
+        style={{
+          height: 18,
+          border: "none",
+          background: "transparent",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            width: 44,
+            height: 5,
+            borderRadius: 999,
+            background: "var(--color-border)",
+          }}
+        />
+      </button>
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
           alignItems: "center",
           gap: "var(--space-1)",
-          padding: "var(--space-2)",
+          padding: "0 var(--space-2) var(--space-2)",
           borderBottom: "1px solid var(--color-border)",
         }}
       >
@@ -2415,14 +2472,18 @@ function MobileSelectionDrawer({
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              fontSize: "var(--text-xs)",
-              color: "var(--color-fg-subtle)",
+              fontSize: state === "closed" ? "var(--text-sm)" : "var(--text-xs)",
+              fontWeight: state === "closed" ? 700 : 500,
+              color:
+                state === "closed"
+                  ? "var(--color-fg)"
+                  : "var(--color-fg-subtle)",
             }}
             title={fullPath}
           >
-            {selected ? fullPath : `${formatCount(selectedCount, "item")} selected`}
+            {state === "closed" ? title : selected ? fullPath : title}
           </div>
-          {sizeLabel && (
+          {state !== "closed" && sizeLabel && (
             <div
               className="tabular-nums"
               style={{
@@ -2449,9 +2510,17 @@ function MobileSelectionDrawer({
             onClick={onDelete}
           />
         )}
-        <MobileIconButton iconName="x" label="Clear" onClick={onClear} />
+        <MobileIconButton
+          iconName="x"
+          label={state === "closed" ? "Unselect" : "Close"}
+          onClick={() => {
+            if (state === "closed") onClear();
+            else onStateChange("closed");
+          }}
+        />
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+      {state !== "closed" && (
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
         {selected ? (
           <FileDetailsPane
             root={root}
@@ -2459,7 +2528,7 @@ function MobileSelectionDrawer({
             width="100%"
             title="Selected"
             onPreview={onPreview}
-            onClose={onClear}
+            onClose={() => onStateChange("closed")}
           />
         ) : (
           <div
@@ -2472,9 +2541,20 @@ function MobileSelectionDrawer({
             {formatCount(selectedCount, "item")} selected
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function mobileListBottomPadding(
+  selectedCount: number,
+  state: MobileDrawerState,
+): string {
+  if (selectedCount === 0) return "92px";
+  if (state === "closed") return "96px";
+  if (state === "half") return "360px";
+  return "92px";
 }
 
 function MobileLoadingList() {
