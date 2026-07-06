@@ -62,6 +62,8 @@ function ShareViewer() {
     }>
   >([]);
   const [showUploadProgress, setShowUploadProgress] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
+  const [zipError, setZipError] = useState("");
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
   const uploadHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -162,7 +164,9 @@ function ShareViewer() {
   const handleDownload = useCallback(
     (path: string) => {
       if (bearer) {
-        window.open(api.shareDownloadUrl(token, bearer, path), "_blank");
+        api.shareDownloadFile(token, bearer, path).catch(() => {
+          window.open(api.shareDownloadUrl(token, bearer, path), "_blank");
+        });
       }
     },
     [token, bearer],
@@ -713,32 +717,77 @@ function ShareViewer() {
           </>
         )}
         {meta?.allow_download && entries.length > 0 && (
-          <button
-            onClick={() => api.shareDownloadZip(token, bearer, [subPath || ""])}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              padding: "var(--space-2) var(--space-3)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-bg)",
-              color: "var(--color-fg)",
-              cursor: "pointer",
-              fontWeight: 500,
-              fontSize: "var(--text-sm)",
-              transition: "background var(--duration-fast)",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = "var(--color-bg-muted)";
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = "var(--color-bg)";
-            }}
-          >
-            <Icon name="download" size={16} />
-            Download all
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <button
+              disabled={isZipping}
+              onClick={async () => {
+                setIsZipping(true);
+                setZipError("");
+                try {
+                  await api.shareDownloadZip(token, bearer, [subPath || ""]);
+                } catch {
+                  setZipError("Failed to download files. Please try again.");
+                } finally {
+                  setIsZipping(false);
+                }
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                padding: "var(--space-2) var(--space-3)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg)",
+                color: "var(--color-fg)",
+                cursor: isZipping ? "default" : "pointer",
+                opacity: isZipping ? 0.7 : 1,
+                fontWeight: 500,
+                fontSize: "var(--text-sm)",
+                transition: "background var(--duration-fast)",
+              }}
+              onMouseOver={(e) => {
+                if (!isZipping)
+                  e.currentTarget.style.background = "var(--color-bg-muted)";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = "var(--color-bg)";
+              }}
+            >
+              <Icon name="download" size={16} />
+              {isZipping ? "Preparing download…" : "Download all"}
+            </button>
+            {isZipping && (
+              <div
+                style={{
+                  height: 3,
+                  borderRadius: 2,
+                  background: "var(--color-border)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  className="operation-progress-indeterminate"
+                  style={{
+                    height: "100%",
+                    width: "42%",
+                    borderRadius: 2,
+                    background: "var(--color-accent)",
+                  }}
+                />
+              </div>
+            )}
+            {zipError && (
+              <span
+                style={{
+                  color: "var(--color-danger)",
+                  fontSize: "var(--text-xs)",
+                }}
+              >
+                {zipError}
+              </span>
+            )}
+          </div>
         )}
       </header>
 
@@ -1208,15 +1257,18 @@ function ShareMediaPreviewDialog({
           </span>
         </div>
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
-          <a
-            href={actualUrl}
-            target="_blank"
-            rel="noopener"
+          <button
+            type="button"
+            onClick={() =>
+              api
+                .shareDownloadFile(token, bearer, target.path)
+                .catch(() => window.open(actualUrl, "_blank"))
+            }
             style={previewIconButtonStyle}
             title="Download"
           >
             <Icon name="download" size={16} color="#fff" />
-          </a>
+          </button>
           <button
             type="button"
             onClick={onClose}

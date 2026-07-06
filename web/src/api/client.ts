@@ -1028,6 +1028,48 @@ export const api = {
   shareDownloadUrl: (token: string, bearer: string, path: string) =>
     `/api/public/shares/${encodeURIComponent(token)}/download?path=${encodeURIComponent(path)}&t=${encodeURIComponent(bearer)}`,
 
+  // Forces a real download even for browser-viewable types (images, PDFs, etc.),
+  // which the server serves with `Content-Disposition: inline`.
+  shareDownloadFile: (token: string, bearer: string, path: string) => {
+    return new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(
+        "GET",
+        `/api/public/shares/${encodeURIComponent(token)}/download?path=${encodeURIComponent(path)}`,
+      );
+      xhr.setRequestHeader("Authorization", `Bearer ${bearer}`);
+      xhr.responseType = "blob";
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const disposition =
+            xhr.getResponseHeader("Content-Disposition") || "";
+          const match = disposition.match(/filename="?([^"]+)"?/);
+          const filename = match?.[1] || path.split("/").pop() || "download";
+
+          const url = URL.createObjectURL(xhr.response);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          resolve();
+        } else {
+          readXhrErrorBody(xhr).then((body) => {
+            reject(new ApiError(xhr.status, xhr.statusText, body));
+          });
+        }
+      });
+
+      xhr.addEventListener("error", () =>
+        reject(new ApiError(0, "Network error", null)),
+      );
+      xhr.send();
+    });
+  },
+
   shareInfo: (token: string, bearer: string, path: string) =>
     apiFetch<FileEntry & { path: string }>(
       `/api/public/shares/${encodeURIComponent(token)}/info?path=${encodeURIComponent(path)}`,
