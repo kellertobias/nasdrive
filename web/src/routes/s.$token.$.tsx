@@ -6,7 +6,7 @@ import {
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import api, { UploadAbortedError } from "../api/client";
-import type { FileEntry } from "../api/client";
+import type { DownloadProgress, FileEntry } from "../api/client";
 import {
   getFileIcon,
   formatFileSize,
@@ -32,6 +32,21 @@ interface ShareMeta {
   allow_upload: boolean;
   allow_download: boolean;
   expires_at: number | null;
+}
+
+interface ActiveDownload {
+  label: string;
+  loadedBytes: number;
+  totalBytes: number | null;
+  pct: number | null;
+}
+
+function fileDownloadKey(path: string) {
+  return `file:${path}`;
+}
+
+function zipDownloadKey(path: string) {
+  return `zip:${path}`;
 }
 
 function ShareViewer() {
@@ -64,9 +79,16 @@ function ShareViewer() {
   const [showUploadProgress, setShowUploadProgress] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
   const [zipError, setZipError] = useState("");
+  const [activeDownloads, setActiveDownloads] = useState<
+    Record<string, ActiveDownload>
+  >({});
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const uploadFileInputRef = useRef<HTMLInputElement>(null);
   const uploadHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const downloadHideTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  const activeDownloadKeysRef = useRef<Set<string>>(new Set());
   const dragCounterRef = useRef(0);
   const uploadAbortMapRef = useRef<Map<string, () => void>>(new Map());
   const uploadCancelledRef = useRef<Set<string>>(new Set());
@@ -161,21 +183,77 @@ function ShareViewer() {
     }
   };
 
+  const clearDownloadSoon = useCallback((key: string) => {
+    const existing = downloadHideTimersRef.current.get(key);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      setActiveDownloads((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      activeDownloadKeysRef.current.delete(key);
+      downloadHideTimersRef.current.delete(key);
+    }, 1200);
+    downloadHideTimersRef.current.set(key, timer);
+  }, []);
+
+  const updateDownloadProgress = useCallback(
+    (key: string, label: string, progress: DownloadProgress) => {
+      const existingTimer = downloadHideTimersRef.current.get(key);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        downloadHideTimersRef.current.delete(key);
+      }
+      setActiveDownloads((prev) => ({
+        ...prev,
+        [key]: {
+          label,
+          loadedBytes: progress.loaded,
+          totalBytes: progress.total,
+          pct: progress.pct,
+        },
+      }));
+    },
+    [],
+  );
+
   const handleDownload = useCallback(
-    (path: string) => {
-      if (bearer) {
-        api.shareDownloadFile(token, bearer, path).catch(() => {
-          window.open(api.shareDownloadUrl(token, bearer, path), "_blank");
-        });
+    async (path: string) => {
+      if (!bearer) return;
+      const key = fileDownloadKey(path);
+      if (activeDownloadKeysRef.current.has(key)) return;
+      activeDownloadKeysRef.current.add(key);
+      const label = path.split("/").pop() || meta?.name || "Download";
+      setActiveDownloads((prev) => ({
+        ...prev,
+        [key]: { label, loadedBytes: 0, totalBytes: null, pct: null },
+      }));
+      try {
+        await api.shareDownloadFile(token, bearer, path, (progress) =>
+          updateDownloadProgress(key, label, progress),
+        );
+      } catch {
+        window.open(api.shareDownloadUrl(token, bearer, path), "_blank");
+      } finally {
+        clearDownloadSoon(key);
       }
     },
-    [token, bearer],
+    [
+      bearer,
+      clearDownloadSoon,
+      meta?.name,
+      token,
+      updateDownloadProgress,
+    ],
   );
 
   // Cancel pending upload auto-hide on unmount.
   useEffect(
     () => () => {
       if (uploadHideTimerRef.current) clearTimeout(uploadHideTimerRef.current);
+      downloadHideTimersRef.current.forEach((timer) => clearTimeout(timer));
+      activeDownloadKeysRef.current.clear();
     },
     [],
   );
@@ -362,6 +440,8 @@ function ShareViewer() {
         token={token}
         bearer={bearer}
         target={previewTarget}
+        activeDownload={activeDownloads[fileDownloadKey(previewTarget.path)]}
+        onDownload={() => handleDownload(previewTarget.path)}
         onClose={() => setPreviewTarget(null)}
       />
     ) : null;
@@ -516,6 +596,7 @@ function ShareViewer() {
 
   // Browsing — single file download
   if (!meta?.is_directory) {
+    const singleDownload = activeDownloads[fileDownloadKey("")];
     const singlePreviewType = singleFileInfo
       ? getPreviewType(singleFileInfo)
       : null;
@@ -581,11 +662,21 @@ function ShareViewer() {
               )}
               <button
                 onClick={() => handleDownload("")}
-                style={secondaryButtonStyle}
+                disabled={Boolean(singleDownload)}
+                style={{
+                  ...secondaryButtonStyle,
+                  cursor: singleDownload ? "progress" : "pointer",
+                  opacity: singleDownload ? 0.75 : 1,
+                }}
               >
                 <Icon name="download" size={16} />
-                Download
+                {singleDownload ? downloadButtonLabel(singleDownload) : "Download"}
               </button>
+            </div>
+          )}
+          {singleDownload && (
+            <div style={{ width: "100%", marginTop: "var(--space-3)" }}>
+              <DownloadProgressBar download={singleDownload} />
             </div>
           )}
         </div>
@@ -721,14 +812,33 @@ function ShareViewer() {
             <button
               disabled={isZipping}
               onClick={async () => {
+                const key = zipDownloadKey(subPath || "");
+                if (activeDownloadKeysRef.current.has(key)) return;
+                activeDownloadKeysRef.current.add(key);
                 setIsZipping(true);
                 setZipError("");
+                setActiveDownloads((prev) => ({
+                  ...prev,
+                  [key]: {
+                    label: "download.zip",
+                    loadedBytes: 0,
+                    totalBytes: null,
+                    pct: null,
+                  },
+                }));
                 try {
-                  await api.shareDownloadZip(token, bearer, [subPath || ""]);
+                  await api.shareDownloadZip(
+                    token,
+                    bearer,
+                    [subPath || ""],
+                    (progress) =>
+                      updateDownloadProgress(key, "download.zip", progress),
+                  );
                 } catch {
                   setZipError("Failed to download files. Please try again.");
                 } finally {
                   setIsZipping(false);
+                  clearDownloadSoon(key);
                 }
               }}
               style={{
@@ -755,27 +865,14 @@ function ShareViewer() {
               }}
             >
               <Icon name="download" size={16} />
-              {isZipping ? "Preparing download…" : "Download all"}
+              {isZipping
+                ? downloadButtonLabel(activeDownloads[zipDownloadKey(subPath || "")])
+                : "Download all"}
             </button>
-            {isZipping && (
-              <div
-                style={{
-                  height: 3,
-                  borderRadius: 2,
-                  background: "var(--color-border)",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  className="operation-progress-indeterminate"
-                  style={{
-                    height: "100%",
-                    width: "42%",
-                    borderRadius: 2,
-                    background: "var(--color-accent)",
-                  }}
-                />
-              </div>
+            {activeDownloads[zipDownloadKey(subPath || "")] && (
+              <DownloadProgressBar
+                download={activeDownloads[zipDownloadKey(subPath || "")]}
+              />
             )}
             {zipError && (
               <span
@@ -830,6 +927,8 @@ function ShareViewer() {
                 const previewType = getPreviewType(entry);
                 const isMediaPreview =
                   previewType === "video" || previewType === "audio";
+                const activeFileDownload =
+                  activeDownloads[fileDownloadKey(entryPath)];
 
                 return (
                   <div
@@ -846,11 +945,12 @@ function ShareViewer() {
                       alignItems: "center",
                       padding: "var(--space-2) var(--space-3)",
                       borderRadius: "var(--radius-md)",
-                      cursor: "pointer",
+                      cursor: activeFileDownload ? "progress" : "pointer",
                       transition:
                         "background var(--duration-fast) var(--ease-out)",
                     }}
                     onClick={() => {
+                      if (activeFileDownload) return;
                       if (entry.is_dir) {
                         navigate({
                           to: "/s/$token/$",
@@ -901,6 +1001,17 @@ function ShareViewer() {
                           Preview
                         </span>
                       )}
+                      {activeFileDownload && (
+                        <span
+                          style={{
+                            fontSize: "var(--text-xs)",
+                            color: "var(--color-accent)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {downloadStatusLabel(activeFileDownload)}
+                        </span>
+                      )}
                     </div>
                     <div
                       className="tabular-nums"
@@ -909,7 +1020,13 @@ function ShareViewer() {
                         color: "var(--color-fg-muted)",
                       }}
                     >
-                      {entry.is_dir ? "—" : formatFileSize(entry.size)}
+                      {activeFileDownload ? (
+                        <DownloadProgressBar download={activeFileDownload} compact />
+                      ) : entry.is_dir ? (
+                        "—"
+                      ) : (
+                        formatFileSize(entry.size)
+                      )}
                     </div>
                     <div
                       className="tabular-nums"
@@ -1149,15 +1266,100 @@ function ShareViewer() {
   );
 }
 
+function downloadButtonLabel(download?: ActiveDownload) {
+  if (!download) return "Downloading…";
+  if (download.pct !== null) return `Downloading ${download.pct}%`;
+  return "Downloading…";
+}
+
+function downloadStatusLabel(download: ActiveDownload) {
+  if (download.pct !== null) return `${download.pct}%`;
+  if (download.loadedBytes > 0) return formatFileSize(download.loadedBytes);
+  return "Starting";
+}
+
+function downloadDetailLabel(download: ActiveDownload) {
+  if (download.totalBytes && download.totalBytes > 0) {
+    return `${formatFileSize(download.loadedBytes)} / ${formatFileSize(download.totalBytes)}`;
+  }
+  if (download.loadedBytes > 0) return formatFileSize(download.loadedBytes);
+  return "Starting transfer";
+}
+
+function DownloadProgressBar({
+  download,
+  compact = false,
+  dark = false,
+}: {
+  download: ActiveDownload;
+  compact?: boolean;
+  dark?: boolean;
+}) {
+  const pct = download.pct;
+  const hasPct = pct !== null;
+  return (
+    <div style={{ minWidth: compact ? 80 : 0 }}>
+      {!compact && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "var(--space-2)",
+            marginBottom: 4,
+            fontSize: "var(--text-xs)",
+            color: dark ? "rgba(255,255,255,0.72)" : "var(--color-fg-muted)",
+          }}
+        >
+          <span
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {download.label}
+          </span>
+          <span className="tabular-nums" style={{ whiteSpace: "nowrap" }}>
+            {downloadDetailLabel(download)}
+          </span>
+        </div>
+      )}
+      <div
+        style={{
+          height: compact ? 4 : 5,
+          borderRadius: 3,
+          background: dark ? "rgba(255,255,255,0.18)" : "var(--color-border)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          className={hasPct ? undefined : "operation-progress-indeterminate"}
+          style={{
+            height: "100%",
+            width: hasPct ? `${Math.max(2, Math.min(100, pct))}%` : "42%",
+            borderRadius: 3,
+            background: dark ? "#fff" : "var(--color-accent)",
+            transition: hasPct ? "width 160ms ease-out" : undefined,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function ShareMediaPreviewDialog({
   token,
   bearer,
   target,
+  activeDownload,
+  onDownload,
   onClose,
 }: {
   token: string;
   bearer: string;
   target: { entry: FileEntry; path: string };
+  activeDownload?: ActiveDownload;
+  onDownload: () => void;
   onClose: () => void;
 }) {
   const previewType = getPreviewType(target.entry);
@@ -1259,13 +1461,10 @@ function ShareMediaPreviewDialog({
         <div style={{ display: "flex", gap: "var(--space-2)" }}>
           <button
             type="button"
-            onClick={() =>
-              api
-                .shareDownloadFile(token, bearer, target.path)
-                .catch(() => window.open(actualUrl, "_blank"))
-            }
+            onClick={onDownload}
+            disabled={Boolean(activeDownload)}
             style={previewIconButtonStyle}
-            title="Download"
+            title={activeDownload ? downloadStatusLabel(activeDownload) : "Download"}
           >
             <Icon name="download" size={16} color="#fff" />
           </button>
@@ -1279,6 +1478,20 @@ function ShareMediaPreviewDialog({
           </button>
         </div>
       </div>
+      {activeDownload && (
+        <div
+          data-preview-no-close
+          style={{
+            position: "absolute",
+            top: 52,
+            right: "var(--space-3)",
+            width: 180,
+            zIndex: 10,
+          }}
+        >
+          <DownloadProgressBar download={activeDownload} dark />
+        </div>
+      )}
 
       <div
         style={{

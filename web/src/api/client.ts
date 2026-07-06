@@ -4,6 +4,13 @@ interface FetchOptions extends RequestInit {
   skipCsrf?: boolean;
 }
 
+export interface DownloadProgress {
+  loaded: number;
+  total: number | null;
+  lengthComputable: boolean;
+  pct: number | null;
+}
+
 class ApiError extends Error {
   status: number;
   statusText: string;
@@ -70,6 +77,34 @@ function formatApiErrorDetails(err: unknown): string {
   }
 
   return String(err);
+}
+
+function notifyDownloadProgress(
+  e: ProgressEvent,
+  onProgress?: (progress: DownloadProgress) => void,
+) {
+  if (!onProgress) return;
+  const total = e.lengthComputable ? e.total : null;
+  onProgress({
+    loaded: e.loaded,
+    total,
+    lengthComputable: e.lengthComputable,
+    pct: total ? Math.round((e.loaded / total) * 100) : null,
+  });
+}
+
+function notifyDownloadComplete(
+  blob: Blob | null,
+  onProgress?: (progress: DownloadProgress) => void,
+) {
+  if (!onProgress) return;
+  const size = blob?.size ?? 0;
+  onProgress({
+    loaded: size,
+    total: size || null,
+    lengthComputable: size > 0,
+    pct: 100,
+  });
 }
 
 async function apiFetch<T>(
@@ -702,7 +737,11 @@ export const api = {
       },
     ),
 
-  downloadZip: (root: string, paths: string[]) => {
+  downloadZip: (
+    root: string,
+    paths: string[],
+    onProgress?: (progress: DownloadProgress) => void,
+  ) => {
     // Use XHR to get binary blob, then trigger download
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -710,9 +749,13 @@ export const api = {
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.setRequestHeader("X-NasFiles-Request", "1");
       xhr.responseType = "blob";
+      xhr.addEventListener("progress", (e) =>
+        notifyDownloadProgress(e, onProgress),
+      );
 
       xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
+          notifyDownloadComplete(xhr.response, onProgress);
           const disposition =
             xhr.getResponseHeader("Content-Disposition") || "";
           const match = disposition.match(/filename="?([^"]+)"?/);
@@ -1030,7 +1073,12 @@ export const api = {
 
   // Forces a real download even for browser-viewable types (images, PDFs, etc.),
   // which the server serves with `Content-Disposition: inline`.
-  shareDownloadFile: (token: string, bearer: string, path: string) => {
+  shareDownloadFile: (
+    token: string,
+    bearer: string,
+    path: string,
+    onProgress?: (progress: DownloadProgress) => void,
+  ) => {
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open(
@@ -1039,9 +1087,13 @@ export const api = {
       );
       xhr.setRequestHeader("Authorization", `Bearer ${bearer}`);
       xhr.responseType = "blob";
+      xhr.addEventListener("progress", (e) =>
+        notifyDownloadProgress(e, onProgress),
+      );
 
       xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
+          notifyDownloadComplete(xhr.response, onProgress);
           const disposition =
             xhr.getResponseHeader("Content-Disposition") || "";
           const match = disposition.match(/filename="?([^"]+)"?/);
@@ -1104,7 +1156,12 @@ export const api = {
     );
   },
 
-  shareDownloadZip: (token: string, bearer: string, paths: string[]) => {
+  shareDownloadZip: (
+    token: string,
+    bearer: string,
+    paths: string[],
+    onProgress?: (progress: DownloadProgress) => void,
+  ) => {
     return new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `/api/public/shares/${encodeURIComponent(token)}/zip`);
@@ -1112,9 +1169,13 @@ export const api = {
       xhr.setRequestHeader("Authorization", `Bearer ${bearer}`);
       xhr.setRequestHeader("X-NasFiles-Request", "1");
       xhr.responseType = "blob";
+      xhr.addEventListener("progress", (e) =>
+        notifyDownloadProgress(e, onProgress),
+      );
 
       xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
+          notifyDownloadComplete(xhr.response, onProgress);
           const disposition =
             xhr.getResponseHeader("Content-Disposition") || "";
           const match = disposition.match(/filename="?([^"]+)"?/);
