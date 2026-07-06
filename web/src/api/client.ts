@@ -148,15 +148,6 @@ async function apiFetch<T>(
   });
 
   if (response.status === 401) {
-    // Redirect to home page — the index route shows the SSO login button
-    // when the user is not authenticated.
-    if (
-      window.location.pathname !== "/" &&
-      window.location.pathname !== "/share-target" &&
-      !window.location.pathname.startsWith("/s/")
-    ) {
-      window.location.href = "/";
-    }
     throw new ApiError(401, "Unauthorized", null);
   }
 
@@ -223,6 +214,7 @@ export interface ServerCapabilities {
 export interface BuildInfo {
   commit: string;
   date: string;
+  started_at: string;
 }
 
 export interface SftpKey {

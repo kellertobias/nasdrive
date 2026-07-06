@@ -1,4 +1,4 @@
-const CACHE_NAME = "nasfiles-shell-v1";
+const CACHE_NAME = "nasfiles-shell-v2";
 const SHELL_ASSETS = ["/", "/manifest.webmanifest", "/favicon.svg"];
 const SHARE_DB_NAME = "nasfiles-share-target";
 const SHARE_STORE_NAME = "incoming-shares";
@@ -44,9 +44,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match("/")),
-    );
+    event.respondWith(navigationFallback(event.request));
     return;
   }
 
@@ -136,4 +134,21 @@ async function cacheFirstWithRefresh(request) {
   }
 
   return refresh;
+}
+
+async function navigationFallback(request) {
+  try {
+    return await fetch(request);
+  } catch (error) {
+    const cachedShell = await caches.match("/");
+    if (cachedShell) return cachedShell;
+    return new Response(
+      `Nasfiles could not load this page while the server was unavailable.\n\n${String(error)}`,
+      {
+        status: 503,
+        statusText: "Service Unavailable",
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      },
+    );
+  }
 }

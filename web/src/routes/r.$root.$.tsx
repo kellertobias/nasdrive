@@ -159,6 +159,7 @@ function FileBrowser() {
   const listingScrollRef = useRef<HTMLDivElement>(null);
   const errorIdRef = useRef(0);
   const deleteJobIdRef = useRef(0);
+  const lastDirectoryRef = useRef({ root, path });
 
   // Dialogs
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -301,10 +302,14 @@ function FileBrowser() {
   }, [path, root, viewMode]);
 
   // Clear selection when navigating to a different directory so stale paths
-  // can't accidentally be targeted by Delete/F2 keyboard shortcuts.
+  // can't accidentally be targeted by Delete/F2 keyboard shortcuts. Column
+  // view preserves selection while committing focused folders into the URL.
   useEffect(() => {
+    const previous = lastDirectoryRef.current;
+    lastDirectoryRef.current = { root, path };
+    if (viewMode === "columns" && previous.root === root) return;
     useViewStore.getState().clearSelection();
-  }, [path, root]);
+  }, [path, root, viewMode]);
 
   const refreshListing = useCallback(
     (targetRoot = root, targetPath = path) => {
@@ -400,10 +405,11 @@ function FileBrowser() {
   };
 
   const navigateToPath = useCallback(
-    (targetPath: string) => {
+    (targetPath: string, options?: { replace?: boolean }) => {
       navigate({
         to: "/r/$root/$",
         params: { root, _splat: targetPath },
+        replace: options?.replace,
       });
     },
     [navigate, root],
@@ -426,8 +432,11 @@ function FileBrowser() {
   const handleColumnActiveFolderPathChange = useCallback(
     (activeFolderPath: string) => {
       setColumnActiveFolderPath(activeFolderPath);
+      if (viewMode === "columns" && activeFolderPath !== path) {
+        navigateToPath(activeFolderPath, { replace: true });
+      }
     },
-    [],
+    [navigateToPath, path, viewMode],
   );
 
   const switchViewMode = useCallback(

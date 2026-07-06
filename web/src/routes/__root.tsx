@@ -1,6 +1,10 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import api from "../api/client";
+import api, { ApiError, formatApiError } from "../api/client";
 import { Icon } from "../components/Icon";
 
 export const Route = createRootRoute({
@@ -48,7 +52,10 @@ function DevModeBanner() {
 }
 
 function RootLayout() {
-  const { isLoading } = useQuery({
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const { error, isLoading } = useQuery({
     queryKey: ["me"],
     queryFn: api.me,
     retry: false,
@@ -81,7 +88,48 @@ function RootLayout() {
   return (
     <>
       <DevModeBanner />
+      {shouldShowGlobalApiError(error, pathname) && (
+        <GlobalApiErrorBanner error={error} />
+      )}
       <Outlet />
     </>
+  );
+}
+
+function shouldShowGlobalApiError(error: unknown, pathname: string) {
+  if (!error) return false;
+  if (
+    error instanceof ApiError &&
+    error.status === 401 &&
+    (pathname === "/" || pathname === "/share-target" || pathname.startsWith("/s/"))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function GlobalApiErrorBanner({ error }: { error: unknown }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        width: "100%",
+        padding: "8px 16px",
+        background: "var(--color-bg-muted)",
+        color: "var(--color-fg)",
+        borderBottom: "1px solid var(--color-warning)",
+        fontWeight: 600,
+        fontSize: 13,
+        textAlign: "center",
+        zIndex: 1000,
+      }}
+    >
+      <Icon name="alertTriangle" size={16} color="var(--color-warning)" />
+      <span>{formatApiError(error)}</span>
+    </div>
   );
 }

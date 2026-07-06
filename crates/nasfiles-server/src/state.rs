@@ -5,6 +5,7 @@ use crate::fs::search::SearchService;
 use crate::sftp::sessions::SftpSessionRegistry;
 use crate::shares::access::ShareRateLimiter;
 use crate::thumb::cache::ThumbnailCache;
+use chrono::{DateTime, Utc};
 use sqlx::AnyPool;
 use std::sync::Arc;
 use webauthn_rs::prelude::Webauthn;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub search: SearchService,
     pub webauthn: Option<Arc<Webauthn>>,
     pub sftp_sessions: SftpSessionRegistry,
+    pub started_at: DateTime<Utc>,
 }
 
 impl AppState {
@@ -46,6 +48,7 @@ impl AppState {
             file_jobs: FileJobStore::new(pool.clone()),
             webauthn,
             sftp_sessions: SftpSessionRegistry::new(),
+            started_at: Utc::now(),
         })
     }
 }

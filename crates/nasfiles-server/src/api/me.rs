@@ -47,6 +47,7 @@ pub async fn me(
         "build": {
             "commit": BUILD_COMMIT,
             "date": BUILD_DATE,
+            "started_at": state.started_at.to_rfc3339(),
         },
     }))
 }

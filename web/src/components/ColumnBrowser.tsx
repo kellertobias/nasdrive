@@ -104,7 +104,7 @@ function basename(path: string) {
 }
 
 function entryAt(entries: FileEntry[], index: number) {
-  if (entries.length === 0) return null;
+  if (entries.length === 0 || index < 0) return null;
   return entries[clamp(index, 0, entries.length - 1)] ?? null;
 }
 

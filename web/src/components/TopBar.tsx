@@ -79,6 +79,10 @@ export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
     user?.build.commit && user.build.commit !== "unknown"
       ? user.build.commit.slice(0, 12)
       : "unknown";
+  const serverStartedAt =
+    user?.build.started_at && user.build.started_at !== "unknown"
+      ? new Date(user.build.started_at).toLocaleString()
+      : "unknown";
   const hasSidebar = pathname.startsWith("/r/");
 
   const navigateToFiles = () => {
@@ -740,6 +744,7 @@ export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
                 }}
               >
                 <div>Build {buildDate}</div>
+                <div>Restarted {serverStartedAt}</div>
                 <div style={{ fontFamily: "monospace" }}>{buildCommit}</div>
               </div>
             </div>
