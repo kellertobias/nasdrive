@@ -32,9 +32,25 @@ interface AdminShare {
   expires_at: number | null;
   created_at: number;
   revoked_at: number | null;
+  revoke_reason: string | null;
+  revoke_source: string | null;
   access_count: number;
   last_accessed_at: number | null;
 }
+
+const REVOKE_REASON_LABELS: Record<string, string> = {
+  manual: "Revoked by owner",
+  lost_permission: "Owner lost folder permission",
+  refresh_token_invalid: "Owner's SSO session was invalidated",
+  refresh_token_missing: "Owner has no stored SSO session",
+  user_not_found_in_idp: "Owner no longer exists in identity provider",
+};
+
+const REVOKE_SOURCE_LABELS: Record<string, string> = {
+  manual: "Manual",
+  login_refresh: "Automatic (login/session refresh)",
+  daily_audit: "Automatic (nightly cleanup job)",
+};
 
 interface AccessLogEntry {
   id: string;
@@ -1055,10 +1071,31 @@ function SharesTab({
                       ? new Date(s.last_accessed_at).toLocaleDateString()
                       : "Never"}
                   </td>
-                  <td
-                    style={{ ...tdStyle, color: statusColor, fontWeight: 500 }}
-                  >
-                    {status}
+                  <td style={{ ...tdStyle, color: statusColor }}>
+                    <div style={{ fontWeight: 500 }}>{status}</div>
+                    {isRevoked && s.revoke_reason && (
+                      <div
+                        title={
+                          s.revoke_source
+                            ? (REVOKE_SOURCE_LABELS[s.revoke_source] ??
+                              s.revoke_source)
+                            : undefined
+                        }
+                        style={{
+                          fontSize: "var(--text-xs)",
+                          fontWeight: 400,
+                          color: "var(--color-fg-muted)",
+                          cursor: s.revoke_source ? "help" : undefined,
+                          borderBottom: s.revoke_source
+                            ? "1px dotted var(--color-fg-muted)"
+                            : undefined,
+                          display: "inline-block",
+                        }}
+                      >
+                        {REVOKE_REASON_LABELS[s.revoke_reason] ??
+                          s.revoke_reason}
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

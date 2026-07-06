@@ -1,6 +1,7 @@
 pub mod local;
 pub mod middleware;
 pub mod oidc;
+pub mod permission_grace;
 pub mod refresh;
 pub mod session;
 pub mod share_audit;

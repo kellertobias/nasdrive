@@ -61,7 +61,7 @@ pub async fn list_all_shares(
                CASE WHEN s.password_hash IS NOT NULL THEN 1 ELSE 0 END AS has_password,
                CASE WHEN s.allow_upload THEN 1 ELSE 0 END AS allow_upload,
                CASE WHEN s.allow_download THEN 1 ELSE 0 END AS allow_download,
-               s.expires_at, s.created_at, s.revoked_at,
+               s.expires_at, s.created_at, s.revoked_at, s.revoke_reason, s.revoke_source,
                (SELECT COUNT(*) FROM share_access_log sal WHERE sal.share_id = s.id) as access_count,
                (SELECT MAX(occurred_at) FROM share_access_log sal WHERE sal.share_id = s.id) as last_accessed_at
         FROM shares s
@@ -116,6 +116,8 @@ pub async fn list_all_shares(
                 "expires_at": s.expires_at,
                 "created_at": s.created_at,
                 "revoked_at": s.revoked_at,
+                "revoke_reason": s.revoke_reason,
+                "revoke_source": s.revoke_source,
                 "access_count": s.access_count,
                 "last_accessed_at": s.last_accessed_at,
             })
@@ -348,6 +350,8 @@ struct ShareRow {
     expires_at: Option<i64>,
     created_at: i64,
     revoked_at: Option<i64>,
+    revoke_reason: Option<String>,
+    revoke_source: Option<String>,
     access_count: i64,
     last_accessed_at: Option<i64>,
 }

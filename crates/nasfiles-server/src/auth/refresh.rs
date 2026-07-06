@@ -177,8 +177,24 @@ pub async fn maybe_refresh_groups(
         return Err(RefreshOutcome::NoAccess);
     }
 
-    // Revoke stale shares
-    let mut revoked_roots = Vec::new();
+    // Folders that still (or once again) grant capability: clear any pending
+    // grace record so a stale first-observation can't confirm an unrelated,
+    // later loss.
+    for (folder, caps) in user.folder_permissions.iter() {
+        if caps.share || caps.read {
+            super::permission_grace::clear_permission_loss_grace(
+                &state.pool,
+                &user.user_id,
+                folder,
+            )
+            .await;
+        }
+    }
+
+    // Folders that lost capability: don't revoke on the first observation —
+    // a single incomplete/transient IdP response shouldn't nuke a share.
+    // Only revoke once the loss is confirmed on a later check.
+    let mut lost_roots = Vec::new();
     for (folder, old_caps) in old_folder_permissions.iter() {
         if old_caps.share || old_caps.read {
             let new_caps = user
@@ -187,30 +203,45 @@ pub async fn maybe_refresh_groups(
                 .copied()
                 .unwrap_or_default();
             if !new_caps.share && !new_caps.read {
-                revoked_roots.push(folder.clone());
+                lost_roots.push(folder.clone());
             }
         }
     }
 
-    if !revoked_roots.is_empty() {
-        let revoked_at = chrono::Utc::now().timestamp_millis();
-
-        for root_key in revoked_roots {
-            let _ = sqlx::query(
-                "UPDATE shares SET revoked_at = $1 WHERE owner_user_id = $2 AND root_key = $3 AND revoked_at IS NULL"
-            )
-            .bind(revoked_at)
-            .bind(&user.user_id)
-            .bind(&root_key)
-            .execute(&state.pool)
-            .await;
-
+    for root_key in lost_roots {
+        if !super::permission_grace::confirm_permission_loss(
+            &state.pool,
+            &user.user_id,
+            &root_key,
+        )
+        .await
+        {
             tracing::info!(
                 user_id = %user.user_id,
                 root_key = %root_key,
-                "Auto-revoked shares due to lost permission during live refresh"
+                "Permission loss observed during live refresh, deferring revoke pending confirmation"
             );
+            continue;
         }
+
+        let revoked_at = chrono::Utc::now().timestamp_millis();
+        let _ = sqlx::query(
+            "UPDATE shares SET revoked_at = $1, revoke_reason = $2, revoke_source = $3
+             WHERE owner_user_id = $4 AND root_key = $5 AND revoked_at IS NULL",
+        )
+        .bind(revoked_at)
+        .bind("lost_permission")
+        .bind("login_refresh")
+        .bind(&user.user_id)
+        .bind(&root_key)
+        .execute(&state.pool)
+        .await;
+
+        tracing::info!(
+            user_id = %user.user_id,
+            root_key = %root_key,
+            "Auto-revoked shares due to confirmed lost permission during live refresh"
+        );
     }
 
     let _ = session.insert("user", &user).await;

@@ -163,7 +163,7 @@ pub async fn revoke_share(
     let now = chrono::Utc::now().timestamp_millis();
 
     let result = sqlx::query(
-        r#"UPDATE shares SET revoked_at = $1
+        r#"UPDATE shares SET revoked_at = $1, revoke_reason = 'manual', revoke_source = 'manual'
            WHERE id = $2 AND owner_user_id = $3 AND revoked_at IS NULL"#,
     )
     .bind(now)

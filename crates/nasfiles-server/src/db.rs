@@ -41,6 +41,7 @@ pub async fn run_migrations(pool: &AnyPool) -> anyhow::Result<()> {
         include_str!("../../../migrations/007_totp_replay_protection.sql"),
         include_str!("../../../migrations/008_ip_blocklist.sql"),
         include_str!("../../../migrations/009_s3.sql"),
+        include_str!("../../../migrations/010_share_revocation_reason.sql"),
     ];
 
     for migration_sql in migrations {
