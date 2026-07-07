@@ -169,6 +169,10 @@ export function ColumnBrowser({
     () => parentColumnPaths(revealedPath),
     [revealedPath],
   );
+  const activeTrailPaths = useMemo(
+    () => new Set(columnPaths.slice(1)),
+    [columnPaths],
+  );
   const columnQueries = useQueries({
     queries: columnPaths.map((columnPath) => ({
       queryKey: ["listing", activeRoot, columnPath],
@@ -647,6 +651,7 @@ export function ColumnBrowser({
               root={activeRoot}
               width={width}
               selectedPaths={selectedPaths}
+              activeTrailPaths={activeTrailPaths}
               focusedRow={
                 focus.kind === "folder" && focus.columnIndex === columnIndex
                   ? focus.rowIndex
@@ -715,6 +720,7 @@ function FolderColumnView({
   root,
   width,
   selectedPaths,
+  activeTrailPaths,
   focusedRow,
   canDrop,
   transferJobs,
@@ -732,6 +738,7 @@ function FolderColumnView({
   root: string;
   width: number;
   selectedPaths: Set<string>;
+  activeTrailPaths: Set<string>;
   focusedRow: number;
   canDrop: boolean;
   transferJobs: TransferJob[];
@@ -942,6 +949,7 @@ function FolderColumnView({
                     path={column.path}
                     fullPath={fullPath}
                     selected={selectedPaths.has(fullPath)}
+                    activePath={entry.is_dir && activeTrailPaths.has(fullPath)}
                     focused={focusedRow === rowIndex}
                     canDrop={canDrop}
                     transferJobs={transferJobs}
@@ -1033,6 +1041,7 @@ function ColumnEntryRow({
   path,
   fullPath,
   selected,
+  activePath,
   focused,
   canDrop,
   transferJobs,
@@ -1051,6 +1060,7 @@ function ColumnEntryRow({
   path: string;
   fullPath: string;
   selected: boolean;
+  activePath: boolean;
   focused: boolean;
   canDrop: boolean;
   transferJobs: TransferJob[];
@@ -1088,6 +1098,7 @@ function ColumnEntryRow({
       data-column-row-index={rowIndex}
       draggable
       aria-selected={selected}
+      aria-current={activePath ? "location" : undefined}
       aria-busy={isBeingMoved || undefined}
       onClick={(e) => {
         if (e.shiftKey) {
@@ -1194,6 +1205,8 @@ function ColumnEntryRow({
         background:
           isDropTarget || selected
             ? "var(--color-accent-muted)"
+            : activePath
+              ? "color-mix(in oklch, var(--color-accent-muted), transparent 35%)"
             : focused
               ? "var(--color-bg-muted)"
               : "transparent",
@@ -1201,11 +1214,17 @@ function ColumnEntryRow({
           ? "var(--color-fg-muted)"
           : selected
             ? "var(--color-accent)"
+            : activePath
+              ? "var(--color-accent)"
             : "var(--color-fg)",
         cursor: isBeingMoved ? "progress" : "pointer",
         fontSize: "var(--text-sm)",
         textAlign: "left",
-        outline: focused ? "1px solid var(--color-accent)" : "none",
+        outline: focused
+          ? "1px solid var(--color-accent)"
+          : activePath
+            ? "1px solid color-mix(in oklch, var(--color-accent), transparent 55%)"
+            : "none",
         outlineOffset: -1,
         opacity: isBeingMoved ? 0.48 : 1,
       }}
