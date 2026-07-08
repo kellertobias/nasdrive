@@ -1,4 +1,5 @@
 const API_BASE = "";
+const DEFAULT_API_REQUEST_TIMEOUT_MS = 30_000;
 
 interface FetchOptions extends RequestInit {
   skipCsrf?: boolean;
@@ -124,6 +125,22 @@ async function apiFetch<T>(
   options: FetchOptions = {},
 ): Promise<T> {
   const { skipCsrf, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const upstreamSignal = fetchOptions.signal;
+  let timedOut = false;
+  const timeoutId = globalThis.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, DEFAULT_API_REQUEST_TIMEOUT_MS);
+  const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
+
+  if (upstreamSignal?.aborted) {
+    controller.abort(upstreamSignal.reason);
+  } else {
+    upstreamSignal?.addEventListener("abort", abortFromUpstream, {
+      once: true,
+    });
+  }
 
   const headers = new Headers(fetchOptions.headers);
 
@@ -141,11 +158,23 @@ async function apiFetch<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...fetchOptions,
-    headers,
-    credentials: "same-origin",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...fetchOptions,
+      headers,
+      credentials: "same-origin",
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (timedOut) {
+      throw new ApiError(0, "Request timed out", null);
+    }
+    throw err;
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+    upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+  }
 
   if (response.status === 401) {
     throw new ApiError(401, "Unauthorized", null);
