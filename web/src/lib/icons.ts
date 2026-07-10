@@ -451,6 +451,7 @@ const THUMB_IMAGE_EXTS = new Set([
   "bmp",
   "tiff",
   "tif",
+  "arw",
   "svg",
 ]);
 const THUMB_VIDEO_EXTS = new Set([

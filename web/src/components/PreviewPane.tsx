@@ -432,9 +432,18 @@ function imagePreviewSource(
   entry: FileEntry,
   info: FileEntry["image_info"] | null | undefined,
 ): { width: number; format: "jpeg" | "png" } | null {
-  if (!entry.has_thumbnail || !info) return null;
+  if (!entry.has_thumbnail) return null;
 
   const ext = entry.name.split(".").pop()?.toLowerCase();
+  if (ext === "arw") {
+    return {
+      width: 1080,
+      format: "jpeg",
+    };
+  }
+
+  if (!info) return null;
+
   const limit = ext === "png" ? 2000 : 1080;
   if (info.width <= limit && info.height <= limit) return null;
 

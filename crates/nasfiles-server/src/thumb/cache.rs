@@ -7,8 +7,8 @@ use tokio::sync::{Mutex, Semaphore};
 
 use super::{
     audio as audio_thumb, epub as epub_thumb, image as img_thumb, kind::ThumbnailKind,
-    pdf as pdf_thumb, storage::ThumbnailMeta, storage::ThumbnailStorage, svg as svg_thumb,
-    text as text_thumb, video as vid_thumb,
+    pdf as pdf_thumb, raw as raw_thumb, storage::ThumbnailMeta, storage::ThumbnailStorage,
+    svg as svg_thumb, text as text_thumb, video as vid_thumb,
 };
 use crate::config::AppConfig;
 
@@ -197,7 +197,7 @@ impl ThumbnailCache {
 
         if matches!(
             kind,
-            ThumbnailKind::Image | ThumbnailKind::Svg | ThumbnailKind::Epub
+            ThumbnailKind::Image | ThumbnailKind::Svg | ThumbnailKind::Epub | ThumbnailKind::Raw
         ) && metadata.len() > config.thumbnail_max_source_file_size
         {
             return Err(ThumbError::TooLarge {
@@ -257,6 +257,16 @@ impl ThumbnailCache {
                 .await?
             }
             ThumbnailKind::Pdf => pdf_thumb::generate(request.source_path, request.width).await?,
+            ThumbnailKind::Raw => {
+                raw_thumb::generate(
+                    request.source_path,
+                    request.width,
+                    config.thumbnail_max_image_width,
+                    config.thumbnail_max_image_height,
+                    config.thumbnail_max_image_alloc,
+                )
+                .await?
+            }
             ThumbnailKind::Text => text_thumb::generate(request.source_path, request.width).await?,
             ThumbnailKind::Epub => {
                 epub_thumb::generate(

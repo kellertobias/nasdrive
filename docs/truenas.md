@@ -214,6 +214,7 @@ If thumbnails are missing:
 
 - confirm the image includes `ffmpeg` for video thumbnails;
 - confirm `pdftoppm` is available for PDF thumbnails;
+- confirm `dcraw_emu` is available for RAW photo thumbnails;
 - check `DATA_DIR` is writable for thumbnail cache storage.
 
 If SFTP does not work:

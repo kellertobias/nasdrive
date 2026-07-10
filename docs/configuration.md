@@ -147,7 +147,7 @@ Admin and home-folder controls:
 | `THUMBNAIL_MAX_CONCURRENT_GENERATIONS` | `2` | Thumbnail worker concurrency. |
 | `MEDIA_PREVIEW_MAX_CONCURRENT_TRANSCODES` | `2` | Concurrent media preview transcodes. |
 
-Video thumbnails and media previews depend on `ffmpeg`/`ffprobe`. PDF thumbnails depend on `pdftoppm`.
+Video thumbnails and media previews depend on `ffmpeg`/`ffprobe`. PDF thumbnails depend on `pdftoppm`. RAW photo thumbnails depend on `dcraw_emu`.
 
 ## Search
 

@@ -9,6 +9,7 @@ pub enum ThumbnailKind {
     Pdf,
     Text,
     Epub,
+    Raw,
 }
 
 impl ThumbnailKind {
@@ -21,6 +22,7 @@ impl ThumbnailKind {
             ThumbnailKind::Pdf => "pdf",
             ThumbnailKind::Text => "text",
             ThumbnailKind::Epub => "epub",
+            ThumbnailKind::Raw => "raw",
         }
     }
 
@@ -43,6 +45,7 @@ impl ThumbnailKind {
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
             "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tiff" | "tif" => Some(Self::Image),
+            "arw" => Some(Self::Raw),
             "svg" => Some(Self::Svg),
             "mp4" | "mkv" | "avi" | "mov" | "webm" | "m4v" | "wmv" | "flv" => Some(Self::Video),
             "mp3" | "ogg" | "flac" | "aac" | "wav" | "m4a" | "wma" | "m4b" => Some(Self::Audio),
@@ -140,6 +143,10 @@ mod tests {
         assert_eq!(
             ThumbnailKind::from_extension("epub"),
             Some(ThumbnailKind::Epub)
+        );
+        assert_eq!(
+            ThumbnailKind::from_extension("arw"),
+            Some(ThumbnailKind::Raw)
         );
         assert_eq!(ThumbnailKind::from_extension("zip"), None);
         assert_eq!(

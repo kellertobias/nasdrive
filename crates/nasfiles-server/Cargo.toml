@@ -85,7 +85,7 @@ async_zip = { version = "0.0.17", features = ["deflate", "tokio", "tokio-fs"] }
 futures-lite = "2"
 
 # Image processing (thumbnails)
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "pnm"] }
 resvg = "0.45"
 tiny-skia = "0.11"
 usvg = "0.45"

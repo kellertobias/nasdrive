@@ -55,6 +55,7 @@ RUN apt-get update && \
         ca-certificates \
         ffmpeg \
         poppler-utils \
+        libraw-bin \
         fonts-dejavu-core \
         p7zip-full \
         unar \

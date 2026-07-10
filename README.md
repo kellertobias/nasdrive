@@ -158,7 +158,7 @@ NASFiles server
 - Set a stable `SESSION_SECRET`; changing it logs users out.
 - Mount your data folders read/write only when users should be able to upload or modify files.
 - Keep `DATA_DIR` on persistent storage.
-- Install or include `ffmpeg` and `pdftoppm` if you want video/PDF thumbnails.
+- Install or include `ffmpeg`, `pdftoppm`, and `dcraw_emu` if you want video, PDF, and RAW photo thumbnails.
 - Use `NO_SERVER_SIDE_EXECUTION=1` if you want to disable thumbnails, media transcoding, metadata probing, and archive extraction.
 
 ## Development
