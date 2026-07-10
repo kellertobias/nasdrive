@@ -279,7 +279,9 @@ export function ColumnBrowser({
     const column = folderColumns[nextColumnIndex];
     const entries = column?.entries ?? [];
     const nextRowIndex =
-      entries.length > 0 ? clamp(focus.rowIndex, 0, entries.length - 1) : -1;
+      entries.length > 0 && focus.rowIndex >= 0
+        ? clamp(focus.rowIndex, 0, entries.length - 1)
+        : -1;
     if (
       focus.columnIndex === nextColumnIndex &&
       focus.rowIndex === nextRowIndex
@@ -290,20 +292,7 @@ export function ColumnBrowser({
       columnIndex: nextColumnIndex,
       rowIndex: nextRowIndex,
     });
-    const entry = entryAt(entries, nextRowIndex);
-    if (entry && column) {
-      const nextPath = entryPath(column.path, entry.name);
-      select(nextPath);
-      setRevealedPath(entry.is_dir ? nextPath : column.path);
-    }
-  }, [activePath, folderColumns, focus, revealedPath, select]);
-
-  useEffect(() => {
-    if (useViewStore.getState().selectedPaths.size > 0) return;
-    const activeColumn = folderColumns[folderColumns.length - 1];
-    const firstEntry = activeColumn?.entries[0];
-    if (firstEntry) select(entryPath(activeColumn.path, firstEntry.name));
-  }, [folderColumns, select]);
+  }, [activePath, folderColumns, focus, revealedPath]);
 
   useEffect(() => {
     const lastColumn = columnRefs.current[folderColumns.length - 1];
@@ -485,7 +474,7 @@ export function ColumnBrowser({
           setFocus({
             kind: "folder",
             columnIndex: focus.columnIndex + 1,
-            rowIndex: 0,
+            rowIndex: -1,
           });
         }
         return;
