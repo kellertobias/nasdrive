@@ -400,20 +400,18 @@ pub async fn callback(
                 .bind(&external_id)
                 .fetch_optional(&state.pool)
                 .await
-        {
-            if let Err(e) = super::share_reconcile::reconcile_authoritative_permissions(
+            && let Err(e) = super::share_reconcile::reconcile_authoritative_permissions(
                 &state.pool,
                 &existing_user_id,
                 &folder_permissions,
                 "interactive_login",
             )
             .await
-            {
-                tracing::error!(
-                    user_id = %existing_user_id,
-                    "Failed to reconcile shares after authoritative no-access login: {e}"
-                );
-            }
+        {
+            tracing::error!(
+                user_id = %existing_user_id,
+                "Failed to reconcile shares after authoritative no-access login: {e}"
+            );
         }
 
         let msg = "Your account has no access to nasfiles. Contact your administrator.";
