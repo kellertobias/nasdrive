@@ -6,7 +6,7 @@ import {
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import api, { DownloadAbortedError, UploadAbortedError } from "../api/client";
-import type { DownloadProgress, FileEntry } from "../api/client";
+import type { DownloadProgress, FileEntry, GalleryItem, ShareType } from "../api/client";
 import {
   getFileIcon,
   formatFileSize,
@@ -31,6 +31,7 @@ interface ShareMeta {
   owner_display_name: string;
   allow_upload: boolean;
   allow_download: boolean;
+  share_type: ShareType;
   expires_at: number | null;
 }
 
@@ -140,6 +141,7 @@ function ShareViewer() {
       phase === "browsing" &&
       bearer &&
       meta?.is_directory &&
+      meta.share_type !== "gallery" &&
       meta?.allow_download
     ) {
       api
@@ -147,7 +149,7 @@ function ShareViewer() {
         .then((listing) => setEntries(listing.entries))
         .catch((e) => setError(String(e)));
     }
-  }, [phase, bearer, token, subPath, meta?.is_directory, meta?.allow_download]);
+  }, [phase, bearer, token, subPath, meta?.is_directory, meta?.allow_download, meta?.share_type]);
 
   useEffect(() => {
     setSingleFileInfo(null);
@@ -646,6 +648,16 @@ function ShareViewer() {
           </form>
         </div>
       </div>
+    );
+  }
+
+  if (meta?.share_type === "gallery" && bearer) {
+    return (
+      <PublicGalleryView
+        token={token}
+        bearer={bearer}
+        meta={meta}
+      />
     );
   }
 
@@ -1481,6 +1493,353 @@ function DownloadProgressBar({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function PublicGalleryView({
+  token,
+  bearer,
+  meta,
+}: {
+  token: string;
+  bearer: string;
+  meta: ShareMeta;
+}) {
+  const [items, setItems] = useState<GalleryItem[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api
+      .publicGallery(token, bearer)
+      .then((resp) => {
+        if (cancelled) return;
+        setItems(resp.items);
+        setSelectedId(resp.items[0]?.id ?? null);
+        setError("");
+      })
+      .catch((err) => {
+        if (!cancelled) setError(String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bearer, token]);
+
+  const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+  const markedCount = items.filter((item) => item.marked).length;
+
+  const updateItem = useCallback(
+    async (item: GalleryItem, patch: { marked?: boolean; note?: string | null }) => {
+      const next = {
+        ...item,
+        marked: patch.marked ?? item.marked,
+        note: patch.note === undefined ? item.note : patch.note,
+      };
+      setItems((prev) => prev.map((entry) => (entry.id === item.id ? next : entry)));
+      setSaving((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        await api.updatePublicGalleryFeedback(token, bearer, item.id, {
+          marked: next.marked,
+          note: next.note,
+        });
+      } catch (err) {
+        setError(String(err));
+        setItems((prev) => prev.map((entry) => (entry.id === item.id ? item : entry)));
+      } finally {
+        setSaving((prev) => ({ ...prev, [item.id]: false }));
+      }
+    },
+    [bearer, token],
+  );
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(260px, 360px) minmax(0, 1fr)",
+        height: "100vh",
+        background: "var(--color-bg)",
+      }}
+    >
+      <aside
+        style={{
+          borderRight: "1px solid var(--color-border)",
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            padding: "var(--space-4)",
+            borderBottom: "1px solid var(--color-border)",
+          }}
+        >
+          <h1 style={{ margin: 0, fontSize: "var(--text-base)", fontWeight: 600 }}>
+            {meta.name}
+          </h1>
+          <div
+            style={{
+              marginTop: 4,
+              color: "var(--color-fg-muted)",
+              fontSize: "var(--text-xs)",
+            }}
+          >
+            Shared by {meta.owner_display_name}
+            {meta.expires_at && (
+              <span> · Expires {formatExpirationDate(meta.expires_at)}</span>
+            )}
+          </div>
+          <div
+            style={{
+              marginTop: "var(--space-3)",
+              display: "flex",
+              gap: "var(--space-2)",
+              color: "var(--color-fg-muted)",
+              fontSize: "var(--text-xs)",
+            }}
+          >
+            <span>{items.length} photos</span>
+            <span>{markedCount} marked</span>
+          </div>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              margin: "var(--space-3)",
+              padding: "var(--space-2) var(--space-3)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "var(--text-sm)",
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div
+          style={{
+            overflow: "auto",
+            padding: "var(--space-3)",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(128px, 1fr))",
+            gap: "var(--space-2)",
+            alignContent: "start",
+          }}
+        >
+          {loading ? (
+            <div style={{ color: "var(--color-fg-muted)", fontSize: "var(--text-sm)" }}>
+              Loading gallery…
+            </div>
+          ) : items.length === 0 ? (
+            <div style={{ color: "var(--color-fg-muted)", fontSize: "var(--text-sm)" }}>
+              No gallery images are ready yet.
+            </div>
+          ) : (
+            items.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setSelectedId(item.id)}
+                style={{
+                  border: "1px solid",
+                  borderColor:
+                    item.id === selected?.id ? "var(--color-accent)" : "var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  background: item.marked
+                    ? "var(--color-accent-muted)"
+                    : "var(--color-bg)",
+                  padding: 4,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  color: "var(--color-fg)",
+                }}
+              >
+                <div
+                  style={{
+                    aspectRatio: "4/3",
+                    borderRadius: "var(--radius-sm)",
+                    overflow: "hidden",
+                    background: "var(--color-bg-muted)",
+                  }}
+                >
+                  {item.thumbnail_ready ? (
+                    <img
+                      src={api.publicGalleryAssetUrl(token, bearer, item.id, "thumbnail")}
+                      alt=""
+                      loading="lazy"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "var(--color-fg-muted)",
+                      }}
+                    >
+                      <Icon name="file" size={22} />
+                    </div>
+                  )}
+                </div>
+                <div
+                  style={{
+                    marginTop: 4,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 6,
+                    fontSize: "var(--text-xs)",
+                    color: "var(--color-fg-muted)",
+                  }}
+                >
+                  <span>{item.sequence}</span>
+                  <span>{item.marked ? "Marked" : ""}</span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
+
+      <main
+        style={{
+          minWidth: 0,
+          display: "grid",
+          gridTemplateRows: "minmax(0, 1fr) auto",
+        }}
+      >
+        {selected ? (
+          <>
+            <div
+              style={{
+                minHeight: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--color-bg-muted)",
+                padding: "var(--space-4)",
+              }}
+            >
+              {selected.preview_ready ? (
+                <img
+                  src={api.publicGalleryAssetUrl(token, bearer, selected.id, "preview")}
+                  alt={selected.filename}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                    borderRadius: "var(--radius-md)",
+                  }}
+                />
+              ) : (
+                <div style={{ color: "var(--color-fg-muted)" }}>
+                  Preview is not available for this file.
+                </div>
+              )}
+            </div>
+            <section
+              style={{
+                borderTop: "1px solid var(--color-border)",
+                padding: "var(--space-4)",
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 360px)",
+                gap: "var(--space-4)",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontSize: "var(--text-base)", fontWeight: 600 }}>
+                  {selected.filename}
+                </h2>
+                <div
+                  style={{
+                    marginTop: 4,
+                    color: "var(--color-fg-muted)",
+                    fontSize: "var(--text-sm)",
+                    display: "flex",
+                    gap: "var(--space-3)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>
+                    {selected.sequence} / {items.length}
+                  </span>
+                  {selected.captured_at && (
+                    <span>{new Date(selected.captured_at).toLocaleString()}</span>
+                  )}
+                  {selected.width && selected.height && (
+                    <span>
+                      {selected.width} × {selected.height}
+                    </span>
+                  )}
+                  <span>{formatFileSize(selected.source_size)}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                <button
+                  onClick={() => updateItem(selected, { marked: !selected.marked })}
+                  disabled={saving[selected.id]}
+                  style={{
+                    ...primaryButtonStyle,
+                    justifyContent: "center",
+                    opacity: saving[selected.id] ? 0.7 : 1,
+                  }}
+                >
+                  <Icon name={selected.marked ? "check" : "plus"} size={16} />
+                  {selected.marked ? "Marked" : "Mark"}
+                </button>
+                <textarea
+                  value={selected.note ?? ""}
+                  onChange={(e) =>
+                    setItems((prev) =>
+                      prev.map((item) =>
+                        item.id === selected.id ? { ...item, note: e.target.value } : item,
+                      ),
+                    )
+                  }
+                  onBlur={(e) => updateItem(selected, { note: e.target.value })}
+                  placeholder="Notes"
+                  rows={4}
+                  style={{
+                    width: "100%",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                    padding: "var(--space-2) var(--space-3)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--color-bg)",
+                    color: "var(--color-fg)",
+                    fontSize: "var(--text-sm)",
+                    fontFamily: "inherit",
+                  }}
+                />
+              </div>
+            </section>
+          </>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--color-fg-muted)",
+            }}
+          >
+            Select a photo.
+          </div>
+        )}
+      </main>
     </div>
   );
 }

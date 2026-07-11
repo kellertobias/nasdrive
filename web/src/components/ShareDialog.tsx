@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import api, { formatApiError, formatApiErrorDetails } from "../api/client";
+import api, {
+  formatApiError,
+  formatApiErrorDetails,
+  type ShareType,
+} from "../api/client";
 import { Icon } from "./Icon";
 import { ErrorDialog } from "./ErrorNotice";
 import type { ErrorNoticeData } from "./ErrorNotice";
@@ -22,6 +26,7 @@ interface ExistingShare {
   target_kind: string;
   allow_upload: boolean;
   allow_download: boolean;
+  share_type: ShareType;
   expires_at: number | null;
   created_at: number;
   revoked_at: number | null;
@@ -38,15 +43,25 @@ export function ShareDialog({
 }: ShareDialogProps) {
   const [targetKind, setTargetKind] = useState<TargetKind>("public");
   const [password, setPassword] = useState("");
-  const [allowDownload, setAllowDownload] = useState(true);
-  const [allowUpload, setAllowUpload] = useState(false);
+  const [shareType, setShareType] = useState<ShareType>("typical");
   const [expiresIn, setExpiresIn] = useState<number | null>(86400); // 1 day default
   const [shareUrl, setShareUrl] = useState("");
+  const [createdShareId, setCreatedShareId] = useState("");
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [dialogError, setDialogError] = useState<ErrorNoticeData | null>(null);
   const [existingShares, setExistingShares] = useState<ExistingShare[]>([]);
+  const [galleryJob, setGalleryJob] = useState<{
+    status: string;
+    total_items: number;
+    processed_items: number;
+    error: string | null;
+  } | null>(null);
+  const [feedbackItems, setFeedbackItems] = useState<
+    Array<{ id: string; filename: string; sequence: number; note: string | null }>
+  >([]);
+  const [feedbackShareId, setFeedbackShareId] = useState("");
 
   // Generate a random password
   const generatePassword = useCallback(() => {
@@ -64,6 +79,10 @@ export function ShareDialog({
   useEffect(() => {
     if (open) {
       setShareUrl("");
+      setCreatedShareId("");
+      setGalleryJob(null);
+      setFeedbackItems([]);
+      setFeedbackShareId("");
       setError("");
       setCopied(false);
       setCreating(false);
@@ -87,6 +106,30 @@ export function ShareDialog({
     }
   }, [open, targetKind, password, generatePassword, root, path]);
 
+  useEffect(() => {
+    if (!createdShareId || shareType !== "gallery") {
+      setGalleryJob(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      api
+        .galleryJobs()
+        .then((resp) => {
+          if (cancelled) return;
+          const job = resp.jobs.find((entry) => entry.share_id === createdShareId);
+          if (job) setGalleryJob(job);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = window.setInterval(load, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [createdShareId, shareType]);
+
   if (!open) return null;
 
   const handleCreate = async () => {
@@ -96,11 +139,13 @@ export function ShareDialog({
       const resp = await api.createShare(root, path, {
         target_kind: targetKind,
         password: targetKind === "guest" ? password : undefined,
-        allow_download: isDirectory ? allowDownload : true,
-        allow_upload: allowUpload,
+        share_type: isDirectory ? shareType : "typical",
+        allow_download: shareType !== "dropbox",
+        allow_upload: shareType === "dropbox" || shareType === "collaboration",
         expires_in: expiresIn,
       });
       setShareUrl(resp.url);
+      setCreatedShareId(resp.id);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -140,6 +185,28 @@ export function ShareDialog({
     }
   };
 
+  const loadGalleryFeedback = async (shareId: string) => {
+    setFeedbackShareId(shareId);
+    try {
+      const resp = await api.shareGalleryFeedback(shareId);
+      setFeedbackItems(
+        resp.items.map((item) => ({
+          id: item.id,
+          filename: item.filename,
+          sequence: item.sequence,
+          note: item.note,
+        })),
+      );
+    } catch (err) {
+      setDialogError({
+        id: Date.now(),
+        title: "Failed to load gallery selections",
+        message: formatApiError(err),
+        details: formatApiErrorDetails(err),
+      });
+    }
+  };
+
   const expiryOptions = [
     { label: "1 hour", value: 3600 },
     { label: "1 day", value: 86400 },
@@ -149,6 +216,12 @@ export function ShareDialog({
   ];
 
   const fileName = path.split("/").pop() || root;
+  const shareTypeOptions: Array<{ value: ShareType; label: string }> = [
+    { value: "typical", label: "Typical Share (Download)" },
+    { value: "gallery", label: "Gallery" },
+    { value: "dropbox", label: "Dropbox (Upload Only)" },
+    { value: "collaboration", label: "Collaboration (Download and Upload)" },
+  ];
 
   return (
     <div
@@ -309,7 +382,7 @@ export function ShareDialog({
             </div>
           )}
 
-          {/* Permissions */}
+          {/* Share type */}
           <div style={{ marginBottom: "var(--space-4)" }}>
             <label
               style={{
@@ -322,52 +395,32 @@ export function ShareDialog({
                 letterSpacing: "var(--tracking-wide)",
               }}
             >
-              Permissions
+              Share type
             </label>
-            <div
+            <select
+              value={isDirectory ? shareType : "typical"}
+              disabled={!isDirectory}
+              onChange={(e) => {
+                setShareType(e.target.value as ShareType);
+                setShareUrl("");
+              }}
               style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "var(--space-2)",
+                width: "100%",
+                padding: "var(--space-2) var(--space-3)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg)",
+                color: "var(--color-fg)",
+                fontSize: "var(--text-sm)",
+                boxSizing: "border-box",
               }}
             >
-              {isDirectory && (
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-2)",
-                  fontSize: "var(--text-sm)",
-                  cursor: "pointer",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={allowDownload}
-                  onChange={(e) => setAllowDownload(e.target.checked)}
-                />
-                Allow download
-              </label>
-              )}
-              {isDirectory && (
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--space-2)",
-                    fontSize: "var(--text-sm)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={allowUpload}
-                    onChange={(e) => setAllowUpload(e.target.checked)}
-                  />
-                  Allow upload
-                </label>
-              )}
-            </div>
+              {shareTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Expiry */}
@@ -510,6 +563,62 @@ export function ShareDialog({
                   </code>
                 </div>
               )}
+              {shareType === "gallery" && (
+                <div style={{ marginTop: "var(--space-3)" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      color: "var(--color-fg-muted)",
+                      fontSize: "var(--text-xs)",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <span>Preparing gallery</span>
+                    <span>
+                      {galleryJob
+                        ? `${galleryJob.processed_items} / ${galleryJob.total_items}`
+                        : "queued"}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      height: 5,
+                      borderRadius: 3,
+                      background: "var(--color-border)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${
+                          galleryJob?.total_items
+                            ? Math.round(
+                                (galleryJob.processed_items /
+                                  galleryJob.total_items) *
+                                  100,
+                              )
+                            : 8
+                        }%`,
+                        background: "var(--color-accent)",
+                        transition: "width 200ms ease-out",
+                      }}
+                    />
+                  </div>
+                  {galleryJob?.error && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        color: "var(--color-danger)",
+                        fontSize: "var(--text-xs)",
+                      }}
+                    >
+                      {galleryJob.error}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -571,7 +680,7 @@ export function ShareDialog({
                 >
                   <div>
                     <span style={{ color: "var(--color-fg)" }}>
-                      {s.target_kind === "public" ? "Public" : "Password"}
+                      {shareTypeLabel(s.share_type)}
                     </span>
                     <span
                       style={{
@@ -608,6 +717,21 @@ export function ShareDialog({
                   </div>
                 </div>
                 <button
+                  onClick={() => loadGalleryFeedback(s.id)}
+                  style={{
+                    padding: "var(--space-1) var(--space-2)",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                    background: "transparent",
+                    color: "var(--color-accent)",
+                    cursor: "pointer",
+                    fontSize: "var(--text-xs)",
+                    display: s.share_type === "gallery" ? "block" : "none",
+                  }}
+                >
+                  View selections
+                </button>
+                <button
                   onClick={() => handleRevoke(s.id)}
                   style={{
                     padding: "var(--space-1) var(--space-2)",
@@ -623,6 +747,65 @@ export function ShareDialog({
                 </button>
               </div>
             ))}
+            {feedbackShareId && (
+              <div
+                style={{
+                  marginTop: "var(--space-3)",
+                  padding: "var(--space-3)",
+                  background: "var(--color-bg-muted)",
+                  borderRadius: "var(--radius-md)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "var(--text-xs)",
+                    fontWeight: 600,
+                    color: "var(--color-fg-muted)",
+                    marginBottom: "var(--space-2)",
+                    textTransform: "uppercase",
+                    letterSpacing: "var(--tracking-wide)",
+                  }}
+                >
+                  Marked photos ({feedbackItems.length})
+                </div>
+                {feedbackItems.length === 0 ? (
+                  <div
+                    style={{
+                      color: "var(--color-fg-muted)",
+                      fontSize: "var(--text-sm)",
+                    }}
+                  >
+                    No photos have been marked yet.
+                  </div>
+                ) : (
+                  feedbackItems.map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        padding: "var(--space-2) 0",
+                        borderTop: "1px solid var(--color-border-muted)",
+                        fontSize: "var(--text-sm)",
+                      }}
+                    >
+                      <div style={{ color: "var(--color-fg)" }}>
+                        {item.sequence}. {item.filename}
+                      </div>
+                      {item.note && (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            color: "var(--color-fg-muted)",
+                            fontSize: "var(--text-xs)",
+                          }}
+                        >
+                          {item.note}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -677,4 +860,18 @@ export function ShareDialog({
       <ErrorDialog error={dialogError} onClose={() => setDialogError(null)} />
     </div>
   );
+}
+
+function shareTypeLabel(type: ShareType) {
+  switch (type) {
+    case "gallery":
+      return "Gallery";
+    case "dropbox":
+      return "Dropbox";
+    case "collaboration":
+      return "Collaboration";
+    case "typical":
+    default:
+      return "Typical";
+  }
 }

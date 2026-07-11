@@ -15,6 +15,7 @@ pub struct Share {
     pub password_hash: Option<String>,
     pub allow_upload: bool,
     pub allow_download: bool,
+    pub share_type: ShareType,
     pub expires_at: Option<i64>,
     pub created_at: i64,
     pub revoked_at: Option<i64>,
@@ -53,6 +54,7 @@ mod tests {
             password_hash: None,
             allow_upload: false,
             allow_download: true,
+            share_type: ShareType::Typical,
             expires_at: None,
             created_at: 0,
             revoked_at: None,
@@ -70,6 +72,38 @@ mod tests {
             share("Documents", "reports/2026/q1.pdf").display_name(),
             "q1.pdf"
         );
+    }
+}
+
+/// User-facing share preset. Permission booleans remain the enforcement layer,
+/// while this preserves the actual share type selected in the UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShareType {
+    Typical,
+    Gallery,
+    Dropbox,
+    Collaboration,
+}
+
+impl ShareType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            ShareType::Typical => "typical",
+            ShareType::Gallery => "gallery",
+            ShareType::Dropbox => "dropbox",
+            ShareType::Collaboration => "collaboration",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "typical" => Some(ShareType::Typical),
+            "gallery" => Some(ShareType::Gallery),
+            "dropbox" => Some(ShareType::Dropbox),
+            "collaboration" => Some(ShareType::Collaboration),
+            _ => None,
+        }
     }
 }
 
@@ -111,10 +145,14 @@ pub struct CreateShareRequest {
     pub target_user_id: Option<String>,
     /// Password for guest-type shares
     pub password: Option<String>,
-    pub allow_upload: bool,
-    pub allow_download: bool,
+    #[serde(default = "default_share_type")]
+    pub share_type: ShareType,
     /// Expiry in seconds from now (null = never)
     pub expires_in: Option<i64>,
+}
+
+fn default_share_type() -> ShareType {
+    ShareType::Typical
 }
 
 /// Public metadata for a share (returned to unauthenticated users).
@@ -127,6 +165,7 @@ pub struct ShareMetadata {
     pub owner_display_name: String,
     pub allow_upload: bool,
     pub allow_download: bool,
+    pub share_type: ShareType,
 }
 
 /// Auth request body for guest shares.

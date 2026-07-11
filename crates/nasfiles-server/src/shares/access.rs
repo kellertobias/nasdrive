@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use dashmap::DashMap;
 use sqlx::AnyPool;
 
-use super::model::{Share, TargetKind};
+use super::model::{Share, ShareType, TargetKind};
 use crate::config::AppConfig;
 use nasfiles_core::tokens;
 
@@ -101,6 +101,7 @@ pub async fn resolve_share_unchecked(
                   target_kind, target_user_id, password_hash,
                   CASE WHEN allow_upload THEN 1 ELSE 0 END AS allow_upload,
                   CASE WHEN allow_download THEN 1 ELSE 0 END AS allow_download,
+                  share_type,
                   expires_at, created_at, revoked_at
            FROM shares
            WHERE token_hash = $1"#,
@@ -219,6 +220,7 @@ pub async fn resolve_share_by_id(
                   target_kind, target_user_id, password_hash,
                   CASE WHEN allow_upload THEN 1 ELSE 0 END AS allow_upload,
                   CASE WHEN allow_download THEN 1 ELSE 0 END AS allow_download,
+                  share_type,
                   expires_at, created_at, revoked_at
            FROM shares WHERE id = $1"#,
     )
@@ -250,6 +252,7 @@ struct ShareRow {
     password_hash: Option<String>,
     allow_upload: i64,
     allow_download: i64,
+    share_type: String,
     expires_at: Option<i64>,
     created_at: i64,
     revoked_at: Option<i64>,
@@ -259,6 +262,9 @@ impl ShareRow {
     fn into_share(self) -> Result<Share, ShareAccessError> {
         let target_kind = TargetKind::from_str(&self.target_kind).ok_or_else(|| {
             ShareAccessError::Internal(format!("invalid target_kind: {}", self.target_kind))
+        })?;
+        let share_type = ShareType::from_str(&self.share_type).ok_or_else(|| {
+            ShareAccessError::Internal(format!("invalid share_type: {}", self.share_type))
         })?;
 
         Ok(Share {
@@ -274,6 +280,7 @@ impl ShareRow {
             password_hash: self.password_hash,
             allow_upload: self.allow_upload != 0,
             allow_download: self.allow_download != 0,
+            share_type,
             expires_at: self.expires_at,
             created_at: self.created_at,
             revoked_at: self.revoked_at,

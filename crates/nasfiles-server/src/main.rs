@@ -142,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/roots", get(api::files::list_roots))
         .route("/search", get(api::files::search_files))
         .route("/transfer-jobs", get(api::files::list_transfer_jobs))
+        .route("/gallery-jobs", get(api::gallery::list_gallery_jobs))
         .route(
             "/transfer-jobs/{job_id}/cancel",
             post(api::files::cancel_transfer_job),
@@ -188,6 +189,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/shares", post(api::shares::create_share))
         .route("/shares", get(api::shares::list_shares))
         .route("/shares/{id}", get(api::shares::get_share))
+        .route(
+            "/shares/{id}/gallery/feedback",
+            get(api::gallery::owner_gallery_feedback),
+        )
         .route(
             "/shares/{id}",
             axum::routing::delete(api::shares::revoke_share),
@@ -327,6 +332,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/shares/{token}", get(api::public::share_metadata))
         .route("/shares/{token}/og-image", get(api::og::share_og_image))
         .route("/shares/{token}/auth", post(api::public::share_auth))
+        .route("/shares/{token}/gallery", get(api::gallery::public_gallery))
+        .route(
+            "/shares/{token}/gallery/{item_id}/asset/{asset}",
+            get(api::gallery::public_gallery_asset),
+        )
+        .route(
+            "/shares/{token}/gallery/{item_id}/feedback",
+            axum::routing::put(api::gallery::public_gallery_feedback),
+        )
         .route("/shares/{token}/list", get(api::public::share_list))
         .route("/shares/{token}/download", get(api::public::share_download))
         .route("/shares/{token}/info", get(api::public::share_info))

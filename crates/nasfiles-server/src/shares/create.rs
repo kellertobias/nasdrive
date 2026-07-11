@@ -2,7 +2,7 @@ use nasfiles_core::models::AuthUser;
 use nasfiles_core::tokens;
 use sqlx::AnyPool;
 
-use super::model::{CreateShareRequest, Share, TargetKind};
+use super::model::{CreateShareRequest, Share, ShareType, TargetKind};
 use crate::config::AppConfig;
 use crate::fs::roots;
 
@@ -28,11 +28,18 @@ pub async fn create_share(
         .map_err(|e| ShareCreateError::InvalidPath(e.to_string()))?;
 
     let is_directory = resolved.is_dir();
+    let (allow_download, allow_upload) = permissions_for_share_type(&request.share_type);
 
     // For upload shares, target must be a directory
-    if request.allow_upload && !is_directory {
+    if allow_upload && !is_directory {
         return Err(ShareCreateError::InvalidPath(
             "upload is only allowed for directories".into(),
+        ));
+    }
+
+    if request.share_type == ShareType::Gallery && !is_directory {
+        return Err(ShareCreateError::InvalidPath(
+            "gallery shares are only supported for folders".into(),
         ));
     }
 
@@ -72,8 +79,8 @@ pub async fn create_share(
         r#"INSERT INTO shares
            (id, token_hash, owner_user_id, root_kind, root_key, relative_path,
             is_directory, target_kind, target_user_id, password_hash,
-            allow_upload, allow_download, expires_at, created_at, revoked_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULL)"#,
+            allow_upload, allow_download, share_type, expires_at, created_at, revoked_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL)"#,
     )
     .bind(&id)
     .bind(&token_hash)
@@ -85,8 +92,9 @@ pub async fn create_share(
     .bind(request.target_kind.as_str())
     .bind(&request.target_user_id)
     .bind(&password_hash)
-    .bind(request.allow_upload)
-    .bind(request.allow_download)
+    .bind(allow_upload)
+    .bind(allow_download)
+    .bind(request.share_type.as_str())
     .bind(expires_at)
     .bind(now)
     .execute(pool)
@@ -104,14 +112,23 @@ pub async fn create_share(
         target_kind: request.target_kind,
         target_user_id: request.target_user_id,
         password_hash,
-        allow_upload: request.allow_upload,
-        allow_download: request.allow_download,
+        allow_upload,
+        allow_download,
+        share_type: request.share_type,
         expires_at,
         created_at: now,
         revoked_at: None,
     };
 
     Ok((share, raw_token))
+}
+
+fn permissions_for_share_type(share_type: &ShareType) -> (bool, bool) {
+    match share_type {
+        ShareType::Typical | ShareType::Gallery => (true, false),
+        ShareType::Dropbox => (false, true),
+        ShareType::Collaboration => (true, true),
+    }
 }
 
 /// Hash a guest-share password using Argon2id.

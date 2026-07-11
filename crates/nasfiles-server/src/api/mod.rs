@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod files;
+pub mod gallery;
 pub mod me;
 pub mod og;
 pub mod profile_tokens;

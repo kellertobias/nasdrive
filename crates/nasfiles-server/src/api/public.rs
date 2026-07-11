@@ -36,6 +36,7 @@ pub async fn share_metadata(
                 "owner_display_name": owner_name,
                 "allow_upload": share.allow_upload,
                 "allow_download": share.allow_download,
+                "share_type": share.share_type,
                 "expires_at": share.expires_at,
             }))
             .into_response()

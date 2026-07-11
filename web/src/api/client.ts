@@ -12,6 +12,38 @@ export interface DownloadProgress {
   pct: number | null;
 }
 
+export type ShareType = "typical" | "gallery" | "dropbox" | "collaboration";
+
+export interface GalleryJob {
+  id: string;
+  share_id: string;
+  status: string;
+  total_items: number;
+  processed_items: number;
+  error: string | null;
+  created_at: number;
+  updated_at: number;
+  finished_at: number | null;
+}
+
+export interface GalleryItem {
+  id: string;
+  relative_path: string;
+  filename: string;
+  sequence: number;
+  source_mtime_ms: number;
+  source_size: number;
+  width: number | null;
+  height: number | null;
+  captured_at: number | null;
+  mime_type: string | null;
+  thumbnail_ready: boolean;
+  preview_ready: boolean;
+  error: string | null;
+  marked: boolean;
+  note: string | null;
+}
+
 interface AbortableDownload {
   promise: Promise<void>;
   abort: () => void;
@@ -889,6 +921,7 @@ export const api = {
       password?: string;
       allow_upload: boolean;
       allow_download: boolean;
+      share_type: ShareType;
       expires_in: number | null;
     },
   ) =>
@@ -920,6 +953,7 @@ export const api = {
         expires_at: number | null;
         created_at: number;
         revoked_at: number | null;
+        share_type: ShareType;
         access_count: number;
         last_accessed_at: number | null;
       }>;
@@ -1081,8 +1115,16 @@ export const api = {
       owner_display_name: string;
       allow_upload: boolean;
       allow_download: boolean;
+      share_type: ShareType;
       expires_at: number | null;
     }>(`/api/public/shares/${encodeURIComponent(token)}`),
+
+  galleryJobs: () => apiFetch<{ jobs: GalleryJob[] }>("/api/gallery-jobs"),
+
+  shareGalleryFeedback: (shareId: string) =>
+    apiFetch<{ items: GalleryItem[] }>(
+      `/api/shares/${encodeURIComponent(shareId)}/gallery/feedback`,
+    ),
 
   shareAuth: (token: string, password?: string) =>
     apiFetch<{ bearer: string; expires_in: number }>(
@@ -1098,6 +1140,37 @@ export const api = {
       `/api/public/shares/${encodeURIComponent(token)}/list?path=${encodeURIComponent(path)}`,
       {
         headers: { Authorization: `Bearer ${bearer}` },
+      },
+    ),
+
+  publicGallery: (token: string, bearer: string) =>
+    apiFetch<{ items: GalleryItem[] }>(
+      `/api/public/shares/${encodeURIComponent(token)}/gallery`,
+      {
+        headers: { Authorization: `Bearer ${bearer}` },
+      },
+    ),
+
+  publicGalleryAssetUrl: (
+    token: string,
+    bearer: string,
+    itemId: string,
+    asset: "thumbnail" | "preview",
+  ) =>
+    `/api/public/shares/${encodeURIComponent(token)}/gallery/${encodeURIComponent(itemId)}/asset/${asset}?t=${encodeURIComponent(bearer)}`,
+
+  updatePublicGalleryFeedback: (
+    token: string,
+    bearer: string,
+    itemId: string,
+    body: { marked: boolean; note: string | null },
+  ) =>
+    apiFetch<{ ok: boolean }>(
+      `/api/public/shares/${encodeURIComponent(token)}/gallery/${encodeURIComponent(itemId)}/feedback`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${bearer}` },
+        body: JSON.stringify(body),
       },
     ),
 

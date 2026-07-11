@@ -5,6 +5,7 @@ use axum::{
 };
 use sqlx::Row;
 
+use crate::api::gallery;
 use crate::auth::middleware::CurrentUser;
 use crate::shares::{audit, create, model::CreateShareRequest};
 use crate::state::AppState;
@@ -16,6 +17,9 @@ pub async fn create_share(
     Json(body): Json<CreateShareRequest>,
 ) -> Result<impl IntoResponse, create::ShareCreateError> {
     let (share, raw_token) = create::create_share(&state.pool, &state.config, &user, body).await?;
+    if share.share_type.as_str() == "gallery" {
+        gallery::spawn_gallery_preparation(state.clone(), share.id.clone());
+    }
 
     let share_url = format!(
         "{}/s/{}",
@@ -30,6 +34,7 @@ pub async fn create_share(
         "created_at": share.created_at,
         "expires_at": share.expires_at,
         "target_kind": share.target_kind,
+        "share_type": share.share_type,
         "allow_upload": share.allow_upload,
         "allow_download": share.allow_download,
     })))
@@ -44,6 +49,7 @@ pub async fn list_shares(
         r#"SELECT s.id, s.root_kind, s.root_key, s.relative_path,
                   CASE WHEN s.is_directory THEN 1 ELSE 0 END AS is_directory,
                   s.target_kind,
+                  s.share_type,
                   CASE WHEN s.allow_upload THEN 1 ELSE 0 END AS allow_upload,
                   CASE WHEN s.allow_download THEN 1 ELSE 0 END AS allow_download,
                   s.expires_at, s.created_at, s.revoked_at,
@@ -68,6 +74,7 @@ pub async fn list_shares(
                         "relative_path": r.get::<String, _>("relative_path"),
                         "is_directory": r.get::<i64, _>("is_directory") != 0,
                         "target_kind": r.get::<String, _>("target_kind"),
+                        "share_type": r.get::<String, _>("share_type"),
                         "allow_upload": r.get::<i64, _>("allow_upload") != 0,
                         "allow_download": r.get::<i64, _>("allow_download") != 0,
                         "expires_at": r.get::<Option<i64>, _>("expires_at"),
@@ -102,6 +109,7 @@ pub async fn get_share(
         r#"SELECT s.id, s.root_kind, s.root_key, s.relative_path,
                   CASE WHEN s.is_directory THEN 1 ELSE 0 END AS is_directory,
                   s.target_kind,
+                  s.share_type,
                   CASE WHEN s.allow_upload THEN 1 ELSE 0 END AS allow_upload,
                   CASE WHEN s.allow_download THEN 1 ELSE 0 END AS allow_download,
                   s.expires_at, s.created_at, s.revoked_at,
@@ -127,6 +135,7 @@ pub async fn get_share(
                 "relative_path": r.get::<String, _>("relative_path"),
                 "is_directory": r.get::<i64, _>("is_directory") != 0,
                 "target_kind": r.get::<String, _>("target_kind"),
+                "share_type": r.get::<String, _>("share_type"),
                 "allow_upload": r.get::<i64, _>("allow_upload") != 0,
                 "allow_download": r.get::<i64, _>("allow_download") != 0,
                 "expires_at": r.get::<Option<i64>, _>("expires_at"),
