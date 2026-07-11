@@ -156,7 +156,10 @@ Video thumbnails and media previews depend on `ffmpeg`/`ffprobe`. PDF thumbnails
 | `SEARCH_MAX_RESULTS` | `100` | Maximum search results returned by one request. |
 | `SEARCH_LIVE_ENTRY_BUDGET` | `25000` | Maximum filesystem entries checked during the live search supplement. |
 | `SEARCH_LIVE_TIME_BUDGET_MS` | `1500` | Maximum time spent on the live search supplement per request. |
-| `SEARCH_REINDEX_INTERVAL_SECS` | `300` | Background metadata index refresh interval. |
+| `SEARCH_REINDEX_INTERVAL_SECS` | `300` | Regular background metadata refresh interval. With disk-state integration configured, HDD roots are scanned only while their pool is already spinning. Set to `0` to disable regular scans. |
+| `SEARCH_FULL_REINDEX_INTERVAL_SECS` | `0` | Full reconciliation interval that scans all roots, including sleeping HDD pools. `0` disables it. |
+| `SEARCH_DISK_STATE_FILE` | unset | Optional JSON telemetry file containing `pools[].name` and `pools[].hdds_spinning`. Telemetry older than two minutes is treated as unavailable. |
+| `SEARCH_HDD_POOLS` | unset | Comma-separated HDD pool names whose roots should be gated by disk-state telemetry. |
 
 ## Shares
 

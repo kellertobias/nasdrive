@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use nasfiles_core::models::FolderCaps;
@@ -73,6 +73,9 @@ pub struct AppConfig {
     pub search_live_entry_budget: usize,
     pub search_live_time_budget_ms: u64,
     pub search_reindex_interval_secs: u64,
+    pub search_full_reindex_interval_secs: u64,
+    pub search_disk_state_file: Option<PathBuf>,
+    pub search_hdd_pools: HashSet<String>,
 
     // Shares
     pub share_token_bytes: usize,
@@ -402,8 +405,23 @@ impl AppConfig {
         let search_reindex_interval_secs: u64 = std::env::var("SEARCH_REINDEX_INTERVAL_SECS")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(300)
-            .max(30);
+            .unwrap_or(300);
+        let search_full_reindex_interval_secs: u64 =
+            std::env::var("SEARCH_FULL_REINDEX_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+        let search_disk_state_file = std::env::var("SEARCH_DISK_STATE_FILE")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from);
+        let search_hdd_pools = std::env::var("SEARCH_HDD_POOLS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect();
 
         // Share token bytes. Clamp to a minimum of 16 bytes (128 bits) so an
         // operator cannot configure a dangerously short, brute-forceable token.
@@ -492,6 +510,9 @@ impl AppConfig {
             search_live_entry_budget,
             search_live_time_budget_ms,
             search_reindex_interval_secs,
+            search_full_reindex_interval_secs,
+            search_disk_state_file,
+            search_hdd_pools,
             share_token_bytes,
             sftp_enabled,
             sftp_bind_addr,
@@ -858,6 +879,9 @@ mod tests {
             search_live_entry_budget: 25_000,
             search_live_time_budget_ms: 1_500,
             search_reindex_interval_secs: 300,
+            search_full_reindex_interval_secs: 0,
+            search_disk_state_file: None,
+            search_hdd_pools: Default::default(),
             share_token_bytes: 24,
             sftp_enabled: false,
             sftp_bind_addr: String::new(),

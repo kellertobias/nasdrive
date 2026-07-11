@@ -7,7 +7,7 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use nasfiles_core::models::{AuthUser, FileEntry, Root};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
 use crate::fs::{roots, sanitize_header_filename};
@@ -90,6 +90,19 @@ struct LiveScan {
     complete: bool,
 }
 
+#[derive(Deserialize)]
+struct DiskStatePayload {
+    #[serde(default)]
+    pools: Vec<PoolDiskState>,
+}
+
+#[derive(Deserialize)]
+struct PoolDiskState {
+    name: String,
+    #[serde(default)]
+    hdds_spinning: bool,
+}
+
 impl SearchService {
     pub fn new(config: Arc<AppConfig>) -> Self {
         Self {
@@ -100,15 +113,42 @@ impl SearchService {
     }
 
     pub fn spawn_refresh_loop(&self) {
+        if self.config.search_reindex_interval_secs == 0
+            && self.config.search_full_reindex_interval_secs == 0
+        {
+            tracing::info!("background search reindexing disabled");
+            return;
+        }
+
         let service = self.clone();
         tokio::spawn(async move {
-            service.refresh_common_roots().await;
-            let mut interval = tokio::time::interval(Duration::from_secs(
-                service.config.search_reindex_interval_secs,
-            ));
-            loop {
+            service.refresh_common_roots(false).await;
+            let mut regular = (service.config.search_reindex_interval_secs > 0).then(|| {
+                tokio::time::interval(Duration::from_secs(
+                    service.config.search_reindex_interval_secs,
+                ))
+            });
+            let mut full = (service.config.search_full_reindex_interval_secs > 0).then(|| {
+                tokio::time::interval(Duration::from_secs(
+                    service.config.search_full_reindex_interval_secs,
+                ))
+            });
+            if let Some(interval) = regular.as_mut() {
                 interval.tick().await;
-                service.refresh_common_roots().await;
+            }
+            if let Some(interval) = full.as_mut() {
+                interval.tick().await;
+            }
+            loop {
+                tokio::select! {
+                    _ = async { regular.as_mut().unwrap().tick().await }, if regular.is_some() => {
+                        service.refresh_common_roots(false).await;
+                    }
+                    _ = async { full.as_mut().unwrap().tick().await }, if full.is_some() => {
+                        tracing::info!("starting scheduled full search reindex");
+                        service.refresh_common_roots(true).await;
+                    }
+                }
             }
         });
     }
@@ -229,15 +269,30 @@ impl SearchService {
         }
     }
 
-    async fn refresh_common_roots(&self) {
+    async fn refresh_common_roots(&self, include_sleeping_hdds: bool) {
         if self.refresh_running.swap(true, Ordering::Relaxed) {
             return;
         }
 
         let config = self.config.clone();
         let scan = tokio::task::spawn_blocking(move || {
+            let spinning_hdd_pools = spinning_hdd_pools(
+                config.search_disk_state_file.as_deref(),
+                &config.search_hdd_pools,
+            );
+            tracing::info!(
+                full = include_sleeping_hdds,
+                spinning_hdd_pools = ?spinning_hdd_pools,
+                "refreshing common search roots"
+            );
             let mut docs_by_scope = HashMap::<String, Vec<SearchDoc>>::new();
             for (root_key, root_path) in &config.common_folders {
+                if !include_sleeping_hdds
+                    && root_hdd_pool(root_path, &config.search_hdd_pools)
+                        .is_some_and(|pool| !spinning_hdd_pools.contains(pool))
+                {
+                    continue;
+                }
                 let root = LiveRoot {
                     root_key: root_key.clone(),
                     root_scope: root_key.clone(),
@@ -430,6 +485,48 @@ impl SearchService {
             .docs
             .remove(&result_key(root_scope, relative_path));
     }
+}
+
+fn root_hdd_pool<'a>(path: &Path, hdd_pools: &'a HashSet<String>) -> Option<&'a str> {
+    let mut components = path.components();
+    let _root = components.next()?;
+    if components.next()?.as_os_str() != "mnt" {
+        return None;
+    }
+    let pool = components.next()?.as_os_str().to_str()?;
+    hdd_pools.get(pool).map(String::as_str)
+}
+
+fn spinning_hdd_pools(
+    disk_state_file: Option<&Path>,
+    hdd_pools: &HashSet<String>,
+) -> HashSet<String> {
+    let Some(path) = disk_state_file else {
+        return hdd_pools.clone();
+    };
+    let fresh = std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age <= Duration::from_secs(120));
+    if !fresh {
+        tracing::warn!(path = %path.display(), "disk-state telemetry missing or stale; skipping HDD search roots");
+        return HashSet::new();
+    }
+    let Ok(payload) = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<DiskStatePayload>(&bytes).ok())
+        .ok_or(())
+    else {
+        tracing::warn!(path = %path.display(), "invalid disk-state telemetry; skipping HDD search roots");
+        return HashSet::new();
+    };
+    payload
+        .pools
+        .into_iter()
+        .filter(|pool| pool.hdds_spinning && hdd_pools.contains(&pool.name))
+        .map(|pool| pool.name)
+        .collect()
 }
 
 impl SearchDoc {
@@ -781,5 +878,35 @@ mod tests {
 
         assert!(!docs.contains_key(&result_key("docs", "Folder/a.txt")));
         assert!(docs.contains_key(&result_key("docs", "Other.txt")));
+    }
+
+    #[test]
+    fn identifies_configured_hdd_pool_from_mount_path() {
+        let pools = HashSet::from(["archive-pool".to_string()]);
+        assert_eq!(
+            root_hdd_pool(Path::new("/mnt/archive-pool/Video"), &pools),
+            Some("archive-pool")
+        );
+        assert_eq!(
+            root_hdd_pool(Path::new("/mnt/data-pool/Media"), &pools),
+            None
+        );
+    }
+
+    #[test]
+    fn reads_only_configured_spinning_pools_from_fresh_telemetry() {
+        let dir = tempfile::tempdir().unwrap();
+        let state_file = dir.path().join("pools.json");
+        fs::write(
+            &state_file,
+            r#"{"pools":[{"name":"archive-pool","hdds_spinning":true},{"name":"bulk-pool","hdds_spinning":false},{"name":"other-pool","hdds_spinning":true}]}"#,
+        )
+        .unwrap();
+        let configured = HashSet::from(["archive-pool".to_string(), "bulk-pool".to_string()]);
+
+        assert_eq!(
+            spinning_hdd_pools(Some(&state_file), &configured),
+            HashSet::from(["archive-pool".to_string()])
+        );
     }
 }
