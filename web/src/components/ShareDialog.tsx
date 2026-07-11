@@ -83,6 +83,7 @@ export function ShareDialog({
       setGalleryJob(null);
       setFeedbackItems([]);
       setFeedbackShareId("");
+      setShareType("typical");
       setError("");
       setCopied(false);
       setCreating(false);
@@ -663,8 +664,10 @@ export function ShareDialog({
               <div
                 key={s.id}
                 style={{
-                  display: "flex",
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto",
                   alignItems: "center",
+                  gap: "var(--space-3)",
                   justifyContent: "space-between",
                   padding: "var(--space-2) 0",
                   fontSize: "var(--text-sm)",
@@ -716,35 +719,41 @@ export function ShareDialog({
                       : "Never"}
                   </div>
                 </div>
-                <button
-                  onClick={() => loadGalleryFeedback(s.id)}
-                  style={{
-                    padding: "var(--space-1) var(--space-2)",
-                    border: "none",
-                    borderRadius: "var(--radius-md)",
-                    background: "transparent",
-                    color: "var(--color-accent)",
-                    cursor: "pointer",
-                    fontSize: "var(--text-xs)",
-                    display: s.share_type === "gallery" ? "block" : "none",
-                  }}
-                >
-                  View selections
-                </button>
-                <button
-                  onClick={() => handleRevoke(s.id)}
-                  style={{
-                    padding: "var(--space-1) var(--space-2)",
-                    border: "none",
-                    borderRadius: "var(--radius-md)",
-                    background: "transparent",
-                    color: "var(--color-danger)",
-                    cursor: "pointer",
-                    fontSize: "var(--text-xs)",
-                  }}
-                >
-                  Revoke
-                </button>
+                <div style={{ display: "flex", gap: "var(--space-1)" }}>
+                  {s.share_type === "gallery" && (
+                    <button
+                      onClick={() => loadGalleryFeedback(s.id)}
+                      style={{
+                        padding: "var(--space-1) var(--space-2)",
+                        border: "none",
+                        borderRadius: "var(--radius-md)",
+                        background:
+                          feedbackShareId === s.id
+                            ? "var(--color-accent-muted)"
+                            : "transparent",
+                        color: "var(--color-accent)",
+                        cursor: "pointer",
+                        fontSize: "var(--text-xs)",
+                      }}
+                    >
+                      Selections
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRevoke(s.id)}
+                    style={{
+                      padding: "var(--space-1) var(--space-2)",
+                      border: "none",
+                      borderRadius: "var(--radius-md)",
+                      background: "transparent",
+                      color: "var(--color-danger)",
+                      cursor: "pointer",
+                      fontSize: "var(--text-xs)",
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </div>
               </div>
             ))}
             {feedbackShareId && (

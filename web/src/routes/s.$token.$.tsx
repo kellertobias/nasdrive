@@ -1536,6 +1536,34 @@ function PublicGalleryView({
 
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
   const markedCount = items.filter((item) => item.marked).length;
+  const selectedIndex = selected
+    ? items.findIndex((item) => item.id === selected.id)
+    : -1;
+
+  const selectOffset = useCallback(
+    (delta: number) => {
+      if (items.length === 0) return;
+      const current = selectedIndex >= 0 ? selectedIndex : 0;
+      const next = Math.min(items.length - 1, Math.max(0, current + delta));
+      setSelectedId(items[next]?.id ?? null);
+    },
+    [items, selectedIndex],
+  );
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLTextAreaElement) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        selectOffset(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        selectOffset(1);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectOffset]);
 
   const updateItem = useCallback(
     async (item: GalleryItem, patch: { marked?: boolean; note?: string | null }) => {
@@ -1563,14 +1591,18 @@ function PublicGalleryView({
 
   return (
     <div
+      className="public-gallery"
       style={{
         display: "grid",
         gridTemplateColumns: "minmax(260px, 360px) minmax(0, 1fr)",
+        gridTemplateRows: "minmax(0, 1fr)",
         height: "100vh",
+        overflow: "hidden",
         background: "var(--color-bg)",
       }}
     >
       <aside
+        className="public-gallery-sidebar"
         style={{
           borderRight: "1px solid var(--color-border)",
           display: "flex",
@@ -1579,6 +1611,7 @@ function PublicGalleryView({
         }}
       >
         <div
+          className="public-gallery-header"
           style={{
             padding: "var(--space-4)",
             borderBottom: "1px solid var(--color-border)",
@@ -1629,6 +1662,7 @@ function PublicGalleryView({
         )}
 
         <div
+          className="public-gallery-grid"
           style={{
             overflow: "auto",
             padding: "var(--space-3)",
@@ -1714,10 +1748,14 @@ function PublicGalleryView({
       </aside>
 
       <main
+        className="public-gallery-main"
         style={{
+          minHeight: 0,
+          height: "100%",
           minWidth: 0,
           display: "grid",
           gridTemplateRows: "minmax(0, 1fr) auto",
+          overflow: "hidden",
         }}
       >
         {selected ? (
@@ -1725,6 +1763,7 @@ function PublicGalleryView({
             <div
               style={{
                 minHeight: 0,
+                overflow: "hidden",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1750,6 +1789,7 @@ function PublicGalleryView({
               )}
             </div>
             <section
+              className="public-gallery-detail"
               style={{
                 borderTop: "1px solid var(--color-border)",
                 padding: "var(--space-4)",
@@ -1787,6 +1827,19 @@ function PublicGalleryView({
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                {meta.allow_download && (
+                  <a
+                    href={api.shareDownloadUrl(token, bearer, selected.relative_path)}
+                    style={{
+                      ...secondaryButtonStyle,
+                      justifyContent: "center",
+                      textDecoration: "none",
+                    }}
+                  >
+                    <Icon name="download" size={16} />
+                    Download Original
+                  </a>
+                )}
                 <button
                   onClick={() => updateItem(selected, { marked: !selected.marked })}
                   disabled={saving[selected.id]}

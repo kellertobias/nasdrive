@@ -193,4 +193,37 @@ time,
   .app-topbar [aria-haspopup='menu'] > svg:last-child {
     display: none;
   }
+
+  .public-gallery {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    height: 100dvh !important;
+  }
+
+  .public-gallery-sidebar {
+    border-right: none !important;
+    border-bottom: 1px solid var(--color-border) !important;
+    max-height: 38dvh;
+    min-height: 220px;
+  }
+
+  .public-gallery-header {
+    padding: var(--space-3) !important;
+  }
+
+  .public-gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)) !important;
+    gap: var(--space-1-5) !important;
+    padding: var(--space-2) !important;
+  }
+
+  .public-gallery-main {
+    min-height: 0;
+  }
+
+  .public-gallery-detail {
+    grid-template-columns: 1fr !important;
+    gap: var(--space-3) !important;
+    padding: var(--space-3) !important;
+  }
 }
