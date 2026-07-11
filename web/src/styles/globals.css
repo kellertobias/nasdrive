@@ -1,6 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-@import 'tailwindcss';
-@import './tokens.css';
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@import "tailwindcss";
+@import "./tokens.css";
 
 /* ---- Base reset ---- */
 *,
@@ -33,7 +33,7 @@ time,
 .file-size,
 .file-date {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' 1;
+  font-feature-settings: "tnum" 1;
 }
 
 /* ---- Focus ring ---- */
@@ -150,6 +150,68 @@ time,
 }
 
 @media (max-width: 720px) {
+  .admin-content {
+    padding: var(--space-3) !important;
+  }
+
+  .admin-tabs {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .admin-tabs > button {
+    flex: 0 0 auto;
+    padding-inline: var(--space-3) !important;
+  }
+
+  .admin-responsive-table,
+  .admin-responsive-table tbody,
+  .admin-responsive-table tr,
+  .admin-responsive-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-responsive-table thead {
+    display: none;
+  }
+
+  .admin-responsive-table tbody {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .admin-responsive-table tbody tr {
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg);
+  }
+
+  .admin-responsive-table tbody td {
+    display: grid;
+    grid-template-columns: minmax(88px, 0.36fr) minmax(0, 0.64fr);
+    align-items: start;
+    gap: var(--space-2);
+    padding: var(--space-2) 0 !important;
+    border-bottom: 1px solid var(--color-border);
+    overflow-wrap: anywhere;
+  }
+
+  .admin-responsive-table tbody td:last-child {
+    border-bottom: 0;
+  }
+
+  .admin-responsive-table tbody td::before {
+    content: attr(data-label);
+    color: var(--color-fg-subtle);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
   .desktop-file-browser {
     display: none !important;
   }
@@ -181,16 +243,16 @@ time,
     display: none;
   }
 
-  .app-topbar [aria-haspopup='menu'] {
+  .app-topbar [aria-haspopup="menu"] {
     min-width: 40px !important;
     max-width: 44px !important;
     height: 36px;
     justify-content: center;
   }
 
-  .app-topbar [aria-haspopup='menu'] > div,
-  .app-topbar [aria-haspopup='menu'] > .app-topbar-transfer-percent,
-  .app-topbar [aria-haspopup='menu'] > svg:last-child {
+  .app-topbar [aria-haspopup="menu"] > div,
+  .app-topbar [aria-haspopup="menu"] > .app-topbar-transfer-percent,
+  .app-topbar [aria-haspopup="menu"] > svg:last-child {
     display: none;
   }
 

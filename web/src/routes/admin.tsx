@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api, {
   type ActiveSftpSession,
   type AdminUserDetails,
@@ -87,6 +87,7 @@ type Tab =
   | "blocklist";
 
 function AdminDashboard() {
+  const adminContentRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>("shares");
   const [shareFilter, setShareFilter] = useState("all");
   const [selectedShareId, setSelectedShareId] = useState<string | null>(null);
@@ -97,6 +98,29 @@ function AdminDashboard() {
     retry: false,
     staleTime: 5 * 60 * 1000,
   });
+
+  useEffect(() => {
+    const root = adminContentRef.current;
+    if (!root) return;
+    const labelTables = () => {
+      root.querySelectorAll("table").forEach((table) => {
+        table.classList.add("admin-responsive-table");
+        const labels = Array.from(table.querySelectorAll("thead th")).map(
+          (cell) => cell.textContent?.trim() || "Actions",
+        );
+        table.querySelectorAll("tbody tr").forEach((row) => {
+          Array.from(row.children).forEach((cell, index) => {
+            if (cell instanceof HTMLElement)
+              cell.dataset.label = labels[index] || "";
+          });
+        });
+      });
+    };
+    labelTables();
+    const observer = new MutationObserver(labelTables);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
 
   if (user && !user.is_admin) {
     return (
@@ -148,7 +172,11 @@ function AdminDashboard() {
     >
       <TopBar user={user ?? null} currentRoot="" />
 
-      <div style={{ padding: "var(--space-6)", flex: 1, overflow: "auto" }}>
+      <div
+        ref={adminContentRef}
+        className="admin-content"
+        style={{ padding: "var(--space-6)", flex: 1, overflow: "auto" }}
+      >
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div
             style={{
@@ -202,6 +230,7 @@ function AdminDashboard() {
 
           {/* Tab bar */}
           <div
+            className="admin-tabs"
             style={{
               display: "flex",
               gap: "var(--space-1)",
@@ -961,10 +990,9 @@ function SharesTab({
   return (
     <div>
       {selectedShareId && (
-        <ShareDetailsPanel
-          shareId={selectedShareId}
-          onClose={() => setSelectedShareId(null)}
-        />
+        <Modal title="Share details" onClose={() => setSelectedShareId(null)}>
+          <ShareDetailsPanel shareId={selectedShareId} />
+        </Modal>
       )}
 
       {/* Filter pills */}
@@ -1153,13 +1181,7 @@ function SharesTab({
   );
 }
 
-function ShareDetailsPanel({
-  shareId,
-  onClose,
-}: {
-  shareId: string;
-  onClose: () => void;
-}) {
+function ShareDetailsPanel({ shareId }: { shareId: string }) {
   const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ["admin-share-details", shareId],
@@ -1189,7 +1211,7 @@ function ShareDetailsPanel({
   };
 
   return (
-    <div style={{ ...panelStyle, marginBottom: "var(--space-5)" }}>
+    <div>
       <div
         style={{
           display: "flex",
@@ -1200,15 +1222,6 @@ function ShareDetailsPanel({
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              color: "var(--color-fg-muted)",
-              fontSize: "var(--text-xs)",
-              marginBottom: "var(--space-1)",
-            }}
-          >
-            Share details
-          </div>
           <code
             style={{
               display: "block",
@@ -1226,10 +1239,6 @@ function ShareDetailsPanel({
               Open path
             </button>
           )}
-          <button type="button" onClick={onClose} style={actionButtonStyle}>
-            <Icon name="x" size={16} />
-            Close
-          </button>
         </div>
       </div>
 

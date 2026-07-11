@@ -28,6 +28,7 @@ import {
   FileDetailsPane,
   type FileDetailsSelection,
 } from "../components/FileDetailsPane";
+import { ThumbnailImage } from "../components/ThumbnailImage";
 import { TransferProgressIndicator } from "../components/TransferProgressIndicator";
 import { ErrorDialog, ErrorToasts } from "../components/ErrorNotice";
 import type { ErrorNoticeData } from "../components/ErrorNotice";
@@ -801,7 +802,12 @@ function FileBrowser() {
     }
     const selectedDirPaths = selectedItems.filter((p) => {
       const name = p.split("/").pop() ?? "";
-      return listing.entries.some((e) => e.is_dir && e.name === name && (path ? `${path}/${e.name}` : e.name) === p);
+      return listing.entries.some(
+        (e) =>
+          e.is_dir &&
+          e.name === name &&
+          (path ? `${path}/${e.name}` : e.name) === p,
+      );
     });
     if (!root || selectedDirPaths.length === 0) {
       setSelectionDirSizes({});
@@ -983,6 +989,7 @@ function FileBrowser() {
 
               <MobileSortMenu
                 open={mobileSortMenuOpen}
+                viewMode={viewMode === "grid" ? "grid" : "list"}
                 sortField={sortField}
                 sortDirection={sortDirection}
                 onToggle={() => {
@@ -991,6 +998,10 @@ function FileBrowser() {
                 }}
                 onSelect={(field, direction) => {
                   setSortOption(field, direction);
+                  setMobileSortMenuOpen(false);
+                }}
+                onViewModeChange={(mode) => {
+                  switchViewMode(mode);
                   setMobileSortMenuOpen(false);
                 }}
               />
@@ -1081,18 +1092,23 @@ function FileBrowser() {
                 )}
               {listing && (
                 <MobileFileList
+                  viewMode={viewMode === "grid" ? "grid" : "list"}
                   entries={listing.entries}
                   root={root}
                   path={path}
                   selectedPaths={selectedPaths}
                   transferJobs={activeTransferJobs}
                   onOpen={navigateTo}
-                  onSelect={(entryPath) => useViewStore.getState().select(entryPath)}
+                  onSelect={(entryPath) =>
+                    useViewStore.getState().select(entryPath)
+                  }
                   onToggleSelect={(entryPath) =>
                     useViewStore.getState().toggleSelect(entryPath)
                   }
                   onShowActions={(entry, x, y) => {
-                    const entryPath = path ? `${path}/${entry.name}` : entry.name;
+                    const entryPath = path
+                      ? `${path}/${entry.name}`
+                      : entry.name;
                     useViewStore.getState().select(entryPath);
                     setContextMenu({ x, y, entry, parentPath: path });
                   }}
@@ -1786,11 +1802,7 @@ function FileBrowser() {
                 marginBottom: "var(--space-3)",
               }}
             >
-              <Icon
-                name="trash"
-                size={20}
-                color="var(--color-danger)"
-              />
+              <Icon name="trash" size={20} color="var(--color-danger)" />
               <h2
                 style={{
                   margin: 0,
@@ -2276,12 +2288,15 @@ function MobileMenuButton({
 
 function MobileSortMenu({
   open,
+  viewMode,
   sortField,
   sortDirection,
   onToggle,
   onSelect,
+  onViewModeChange,
 }: {
   open: boolean;
+  viewMode: "grid" | "list";
   sortField: "name" | "size" | "modified_at";
   sortDirection: "asc" | "desc";
   onToggle: () => void;
@@ -2289,6 +2304,7 @@ function MobileSortMenu({
     field: "name" | "size" | "modified_at",
     direction: "asc" | "desc",
   ) => void;
+  onViewModeChange: (mode: "grid" | "list") => void;
 }) {
   const options: Array<{
     label: string;
@@ -2322,6 +2338,40 @@ function MobileSortMenu({
             boxShadow: "var(--shadow-lg)",
           }}
         >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "var(--space-1)",
+              paddingBottom: "var(--space-1)",
+              marginBottom: "var(--space-1)",
+              borderBottom: "1px solid var(--color-border)",
+            }}
+          >
+            {(["list", "grid"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onViewModeChange(mode)}
+                style={{
+                  ...mobileMenuItemStyle,
+                  justifyContent: "center",
+                  background:
+                    viewMode === mode
+                      ? "var(--color-accent-muted)"
+                      : "transparent",
+                  color:
+                    viewMode === mode
+                      ? "var(--color-accent)"
+                      : "var(--color-fg)",
+                  fontWeight: viewMode === mode ? 700 : 500,
+                }}
+              >
+                <Icon name={mode === "grid" ? "grid" : "list"} size={16} />
+                {mode === "grid" ? "Thumbnails" : "List"}
+              </button>
+            ))}
+          </div>
           {options.map((option) => {
             const active =
               sortField === option.field && sortDirection === option.direction;
@@ -2394,10 +2444,14 @@ function MobileSelectionDrawer({
   onPreview: (entry: FileEntry, parentPath: string) => void;
   onDelete: () => void;
 }) {
+  const dragStartRef = useRef<{ y: number; state: MobileDrawerState } | null>(
+    null,
+  );
   const fullPath = selected?.path
     ? `${rootDisplayName}/${selected.path}`
     : rootDisplayName;
-  const title = selected?.entry.name ?? `${formatCount(selectedCount, "item")} selected`;
+  const title =
+    selected?.entry.name ?? `${formatCount(selectedCount, "item")} selected`;
   const sizeLabel = selectionStats
     ? selectionStats.knownSize
       ? formatFileSize(selectionStats.totalSize)
@@ -2429,10 +2483,25 @@ function MobileSelectionDrawer({
         background: "var(--color-bg)",
         boxShadow: "var(--shadow-lg)",
         overflow: "hidden",
+        transition: "height var(--duration-normal) var(--ease-out)",
       }}
     >
       <button
         type="button"
+        onTouchStart={(event) => {
+          dragStartRef.current = { y: event.touches[0].clientY, state };
+        }}
+        onTouchEnd={(event) => {
+          const start = dragStartRef.current;
+          dragStartRef.current = null;
+          if (!start) return;
+          const delta = event.changedTouches[0].clientY - start.y;
+          if (Math.abs(delta) < 44) return;
+          event.preventDefault();
+          const states: MobileDrawerState[] = ["closed", "half", "full"];
+          const index = states.indexOf(start.state);
+          onStateChange(states[clamp(index + (delta > 0 ? -1 : 1), 0, 2)]);
+        }}
         aria-label={
           state === "closed"
             ? "Open details"
@@ -2454,6 +2523,7 @@ function MobileSelectionDrawer({
           justifyContent: "center",
           cursor: "pointer",
           flexShrink: 0,
+          touchAction: "none",
         }}
       >
         <span
@@ -2481,7 +2551,8 @@ function MobileSelectionDrawer({
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              fontSize: state === "closed" ? "var(--text-sm)" : "var(--text-xs)",
+              fontSize:
+                state === "closed" ? "var(--text-sm)" : "var(--text-xs)",
               fontWeight: state === "closed" ? 700 : 500,
               color:
                 state === "closed"
@@ -2530,26 +2601,26 @@ function MobileSelectionDrawer({
       </div>
       {state !== "closed" && (
         <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-        {selected ? (
-          <FileDetailsPane
-            root={root}
-            selected={selected}
-            width="100%"
-            flush
-            title="Selected"
-            onPreview={onPreview}
-          />
-        ) : (
-          <div
-            style={{
-              padding: "var(--space-5)",
-              color: "var(--color-fg-muted)",
-              fontSize: "var(--text-sm)",
-            }}
-          >
-            {formatCount(selectedCount, "item")} selected
-          </div>
-        )}
+          {selected ? (
+            <FileDetailsPane
+              root={root}
+              selected={selected}
+              width="100%"
+              flush
+              title="Selected"
+              onPreview={onPreview}
+            />
+          ) : (
+            <div
+              style={{
+                padding: "var(--space-5)",
+                color: "var(--color-fg-muted)",
+                fontSize: "var(--text-sm)",
+              }}
+            >
+              {formatCount(selectedCount, "item")} selected
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2589,6 +2660,7 @@ function MobileLoadingList() {
 }
 
 function MobileFileList({
+  viewMode,
   entries,
   root,
   path,
@@ -2599,6 +2671,7 @@ function MobileFileList({
   onToggleSelect,
   onShowActions,
 }: {
+  viewMode: "grid" | "list";
   entries: FileEntry[];
   root: string;
   path: string;
@@ -2635,7 +2708,9 @@ function MobileFileList({
       aria-label="Files"
       style={{
         display: "grid",
-        gap: "var(--space-1)",
+        gridTemplateColumns:
+          viewMode === "grid" ? "repeat(2, minmax(0, 1fr))" : "1fr",
+        gap: viewMode === "grid" ? "var(--space-2)" : "var(--space-1)",
       }}
     >
       {sortedEntries.map((entry) => {
@@ -2653,7 +2728,10 @@ function MobileFileList({
             aria-selected={selected}
             style={{
               display: "grid",
-              gridTemplateColumns: "44px minmax(0, 1fr) 40px",
+              gridTemplateColumns:
+                viewMode === "grid"
+                  ? "minmax(0, 1fr) 40px"
+                  : "44px minmax(0, 1fr) 40px",
               alignItems: "center",
               minHeight: 64,
               gap: "var(--space-1)",
@@ -2679,6 +2757,7 @@ function MobileFileList({
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
+                ...(viewMode === "grid" ? { display: "none" } : {}),
               }}
             >
               <Icon name={selected ? "checkCircle" : "file"} size={18} />
@@ -2697,7 +2776,10 @@ function MobileFileList({
                 minWidth: 0,
                 minHeight: 62,
                 display: "grid",
-                gridTemplateColumns: "32px minmax(0, 1fr)",
+                gridTemplateColumns:
+                  viewMode === "grid"
+                    ? "minmax(0, 1fr)"
+                    : "32px minmax(0, 1fr)",
                 alignItems: "center",
                 gap: "var(--space-2)",
                 border: "none",
@@ -2706,8 +2788,27 @@ function MobileFileList({
                 textAlign: "left",
               }}
             >
-              <span style={{ position: "relative", display: "inline-flex" }}>
-                <FileIcon svg={icon.svg} color={icon.color} size={28} />
+              <span
+                style={{
+                  position: "relative",
+                  display: "inline-flex",
+                  minWidth: 0,
+                }}
+              >
+                {viewMode === "grid" && entry.has_thumbnail ? (
+                  <ThumbnailImage
+                    root={root}
+                    path={path}
+                    entry={entry}
+                    width={360}
+                  />
+                ) : (
+                  <FileIcon
+                    svg={icon.svg}
+                    color={icon.color}
+                    size={viewMode === "grid" ? 48 : 28}
+                  />
+                )}
                 <span style={{ position: "absolute", right: -8, top: -7 }}>
                   <TransferProgressIndicator jobs={entryTransferJobs} compact />
                 </span>
@@ -2721,6 +2822,7 @@ function MobileFileList({
                     whiteSpace: "nowrap",
                     fontSize: "var(--text-sm)",
                     fontWeight: entry.is_dir ? 600 : 500,
+                    textAlign: viewMode === "grid" ? "center" : "left",
                   }}
                 >
                   {entry.name}
@@ -2735,6 +2837,7 @@ function MobileFileList({
                     marginTop: 2,
                     fontSize: "var(--text-xs)",
                     color: "var(--color-fg-subtle)",
+                    textAlign: viewMode === "grid" ? "center" : "left",
                   }}
                 >
                   {entry.is_dir
