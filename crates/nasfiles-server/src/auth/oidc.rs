@@ -392,6 +392,30 @@ pub async fn callback(
             groups = ?groups,
             "User rejected at login: effectively no access"
         );
+
+        // The login itself completed and the verified token contains no usable
+        // access. Unlike a stale/missing session token, this is authoritative.
+        if let Ok(Some((existing_user_id,))) =
+            sqlx::query_as::<_, (String,)>("SELECT id FROM users WHERE external_id = $1")
+                .bind(&external_id)
+                .fetch_optional(&state.pool)
+                .await
+        {
+            if let Err(e) = super::share_reconcile::reconcile_authoritative_permissions(
+                &state.pool,
+                &existing_user_id,
+                &folder_permissions,
+                "interactive_login",
+            )
+            .await
+            {
+                tracing::error!(
+                    user_id = %existing_user_id,
+                    "Failed to reconcile shares after authoritative no-access login: {e}"
+                );
+            }
+        }
+
         let msg = "Your account has no access to nasfiles. Contact your administrator.";
         return Ok((
             axum::http::StatusCode::FORBIDDEN,
@@ -426,6 +450,18 @@ pub async fn callback(
         now,
     )
     .await?;
+
+    // This completed authorization-code login and its verified ID token are an
+    // authoritative permission snapshot. Restore still-valid shares when
+    // access returned, and revoke only roots the verified claims no longer grant.
+    super::share_reconcile::reconcile_authoritative_permissions(
+        &state.pool,
+        &user_id,
+        &folder_permissions,
+        "interactive_login",
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("share reconciliation error: {e}")))?;
 
     // Session fixation prevention
     session

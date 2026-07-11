@@ -5,6 +5,7 @@ pub mod permission_grace;
 pub mod refresh;
 pub mod session;
 pub mod share_audit;
+pub mod share_reconcile;
 
 use axum::http::HeaderMap;
 

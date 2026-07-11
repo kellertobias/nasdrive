@@ -89,13 +89,12 @@ pub fn spawn_daily_share_audit(state: AppState) -> tokio::task::JoinHandle<()> {
                 let (_external_id, enc_refresh_token) = match user_row {
                     Ok(Some((ext, Some(enc_rt)))) => (ext, enc_rt),
                     _ => {
-                        // Missing user or no refresh token -> revoke all shares
+                        // A missing stored credential only means we cannot run
+                        // the audit. It says nothing about the user's access.
                         tracing::warn!(
-                            "User {} missing or has no refresh token, revoking active shares",
+                            "User {} missing or has no refresh token; skipping share audit",
                             user_id
                         );
-                        revoke_all_active_shares(&state.pool, &user_id, "refresh_token_missing")
-                            .await;
                         continue;
                     }
                 };
@@ -107,11 +106,9 @@ pub fn spawn_daily_share_audit(state: AppState) -> tokio::task::JoinHandle<()> {
                     Ok(rt) => rt,
                     Err(_) => {
                         tracing::warn!(
-                            "Failed to decrypt refresh token for user {}, revoking active shares",
+                            "Failed to decrypt refresh token for user {}; skipping share audit",
                             user_id
                         );
-                        revoke_all_active_shares(&state.pool, &user_id, "refresh_token_invalid")
-                            .await;
                         continue;
                     }
                 };
@@ -122,15 +119,9 @@ pub fn spawn_daily_share_audit(state: AppState) -> tokio::task::JoinHandle<()> {
                     Ok(req) => req,
                     Err(_) => {
                         tracing::warn!(
-                            "Refresh token exchange failed for user {}, revoking active shares",
+                            "Refresh token exchange could not be started for user {}; skipping share audit",
                             user_id
                         );
-                        let _ = sqlx::query("UPDATE users SET oidc_access_token = NULL, oidc_refresh_token = NULL WHERE id = $1")
-                            .bind(&user_id)
-                            .execute(&state.pool)
-                            .await;
-                        revoke_all_active_shares(&state.pool, &user_id, "refresh_token_invalid")
-                            .await;
                         continue;
                     }
                 };
@@ -158,14 +149,12 @@ pub fn spawn_daily_share_audit(state: AppState) -> tokio::task::JoinHandle<()> {
                     }
                     Err(_) => {
                         tracing::warn!(
-                            "Refresh token exchange failed for user {}, revoking active shares",
+                            "Refresh token exchange failed for user {}; clearing stale credentials and skipping share audit",
                             user_id
                         );
                         let _ = sqlx::query("UPDATE users SET oidc_access_token = NULL, oidc_refresh_token = NULL WHERE id = $1")
                             .bind(&user_id)
                             .execute(&state.pool)
-                            .await;
-                        revoke_all_active_shares(&state.pool, &user_id, "refresh_token_invalid")
                             .await;
                         continue;
                     }
@@ -191,7 +180,21 @@ pub fn spawn_daily_share_audit(state: AppState) -> tokio::task::JoinHandle<()> {
 
                 if resp.status() == 404 {
                     tracing::warn!("User {} not found in IdP, revoking active shares", user_id);
-                    revoke_all_active_shares(&state.pool, &user_id, "user_not_found_in_idp").await;
+                    let empty_permissions = std::collections::HashMap::new();
+                    if let Err(e) = super::share_reconcile::reconcile_authoritative_permissions(
+                        &state.pool,
+                        &user_id,
+                        &empty_permissions,
+                        "daily_audit_user_not_found",
+                    )
+                    .await
+                    {
+                        tracing::error!(
+                            "Failed to reconcile shares for missing IdP user {}: {}",
+                            user_id,
+                            e
+                        );
+                    }
                     continue;
                 } else if !resp.status().is_success() {
                     tracing::warn!(
@@ -292,29 +295,6 @@ pub fn spawn_daily_share_audit(state: AppState) -> tokio::task::JoinHandle<()> {
             tracing::info!("Daily share audit scan complete");
         }
     })
-}
-
-async fn revoke_all_active_shares(pool: &sqlx::AnyPool, user_id: &str, reason: &str) {
-    let now = chrono::Utc::now().timestamp_millis();
-    let res = sqlx::query(
-        "UPDATE shares SET revoked_at = $1, revoke_reason = $2, revoke_source = $3
-         WHERE owner_user_id = $4 AND revoked_at IS NULL",
-    )
-    .bind(now)
-    .bind(reason)
-    .bind("daily_audit")
-    .bind(user_id)
-    .execute(pool)
-    .await;
-    if let Ok(result) = res {
-        if result.rows_affected() > 0 {
-            tracing::info!(
-                "Revoked {} active shares for user {}",
-                result.rows_affected(),
-                user_id
-            );
-        }
-    }
 }
 
 /// Deletes shares that have been stale for more than [`STALE_SHARE_GRACE_MS`]:
