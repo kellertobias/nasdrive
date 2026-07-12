@@ -555,6 +555,7 @@ impl SearchDoc {
                 media_info: None,
                 image_info: None,
                 item_count: None,
+                gallery_feedback: None,
             },
             source,
             score,

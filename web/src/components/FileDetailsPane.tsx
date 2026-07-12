@@ -9,6 +9,7 @@ import {
 } from "../lib/icons";
 import { FileIcon, Icon } from "./Icon";
 import { ThumbnailImage } from "./ThumbnailImage";
+import { GalleryFeedbackBadges } from "./GalleryFeedbackBadges";
 
 export interface FileDetailsSelection {
   entry: FileEntry;
@@ -44,6 +45,8 @@ export function FileDetailsPane({
   const showThumb = Boolean(entry && !entry.is_dir && hasThumbnail(entry));
   const mediaInfo = fileInfo?.media_info ?? entry?.media_info ?? null;
   const imageInfo = fileInfo?.image_info ?? entry?.image_info ?? null;
+  const displayEntry = fileInfo ?? entry;
+  const galleryFeedback = displayEntry?.gallery_feedback ?? null;
   const mediaDetails = mediaInfo ? getMediaInfoDetails(mediaInfo) : [];
   const imageDetails = imageInfo ? getImageInfoDetails(imageInfo) : [];
   const selectedPath = selected?.path ?? "";
@@ -183,9 +186,14 @@ export function FileDetailsPane({
                 color: "var(--color-fg)",
                 overflowWrap: "anywhere",
                 lineHeight: "var(--leading-sm)",
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-1)",
+                flexWrap: "wrap",
               }}
             >
-              {entry.name}
+              <span>{entry.name}</span>
+              {displayEntry && <GalleryFeedbackBadges entry={displayEntry} />}
             </div>
             <div
               style={{
@@ -228,6 +236,47 @@ export function FileDetailsPane({
 
           {imageDetails.length > 0 && (
             <DetailSection title="Image" details={imageDetails} />
+          )}
+
+          {galleryFeedback?.note && (
+            <section
+              style={{
+                borderTop: "1px solid var(--color-border)",
+                paddingTop: "var(--space-4)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-1)",
+                  marginBottom: "var(--space-2)",
+                  color: "var(--color-fg-subtle)",
+                  fontSize: "var(--text-xs)",
+                  fontWeight: 600,
+                  letterSpacing: "var(--tracking-wide)",
+                  textTransform: "uppercase",
+                }}
+              >
+                <Icon name="fileText" size={14} />
+                Gallery note
+              </div>
+              <div
+                style={{
+                  padding: "var(--space-3)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  background: "var(--color-bg)",
+                  color: "var(--color-fg)",
+                  fontSize: "var(--text-sm)",
+                  lineHeight: "var(--leading-sm)",
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {galleryFeedback.note}
+              </div>
+            </section>
           )}
 
           {!entry.is_dir && onPreview && (

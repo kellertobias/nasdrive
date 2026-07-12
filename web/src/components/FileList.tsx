@@ -23,6 +23,7 @@ import {
   transferJobsForTarget,
   transferProgressPercent,
 } from "../lib/transferJobs";
+import { GalleryFeedbackBadges } from "./GalleryFeedbackBadges";
 
 interface FileListProps {
   entries: FileEntry[];
@@ -521,6 +522,7 @@ export function FileList({
                 >
                   <MiddleEllipsis text={entry.name} maxWidth={400} />
                 </span>
+                <GalleryFeedbackBadges entry={entry} compact />
                 <TransferProgressIndicator
                   jobs={displayedTransferJobs}
                   compact

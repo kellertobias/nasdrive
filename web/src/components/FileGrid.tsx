@@ -24,6 +24,7 @@ import {
   transferJobsForTarget,
   transferProgressPercent,
 } from "../lib/transferJobs";
+import { GalleryFeedbackBadges } from "./GalleryFeedbackBadges";
 
 interface FileGridProps {
   entries: FileEntry[];
@@ -442,7 +443,18 @@ export function FileGrid({
                     padding: showThumb ? "0 var(--space-1)" : 0,
                   }}
                 >
-                  <MiddleEllipsis text={entry.name} maxWidth={140} />
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "var(--space-1)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <MiddleEllipsis text={entry.name} maxWidth={120} />
+                    <GalleryFeedbackBadges entry={entry} compact />
+                  </div>
                 </div>
 
                 {(isBeingMoved || isBeingDragged || isDragHover) && (

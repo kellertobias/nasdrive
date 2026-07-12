@@ -4,6 +4,7 @@ import api from "../api/client";
 import { getPreviewType, getFileIcon, formatFileSize } from "../lib/icons";
 import { Icon, FileIcon } from "./Icon";
 import { MediaPreview } from "./MediaPreview";
+import { GalleryFeedbackBadges } from "./GalleryFeedbackBadges";
 import CodeMirror from "@uiw/react-codemirror";
 import { monokai } from "@uiw/codemirror-theme-monokai";
 import { loadLanguage } from "@uiw/codemirror-extensions-langs";
@@ -223,6 +224,7 @@ export function PreviewPane({
           >
             {entry.name}
           </span>
+          <GalleryFeedbackBadges entry={fileInfo ?? entry} compact />
           <span
             style={{
               fontSize: "var(--text-xs)",

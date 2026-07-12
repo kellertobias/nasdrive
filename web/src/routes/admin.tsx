@@ -1211,7 +1211,7 @@ function ShareDetailsPanel({ shareId }: { shareId: string }) {
   };
 
   return (
-    <div>
+    <div className="share-details">
       <div
         style={{
           display: "flex",
@@ -1329,11 +1329,67 @@ function ShareDetailsPanel({ shareId }: { shareId: string }) {
             {logEntries.length === 0 ? (
               <EmptyMessage text="No access log entries for this share" />
             ) : (
-              <AccessLogTable entries={logEntries} onOpenShare={null} />
+              <ShareAccessLog entries={logEntries} />
             )}
           </section>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ShareAccessLog({ entries }: { entries: AccessLogEntry[] }) {
+  return (
+    <div className="share-access-log" role="list" aria-label="Share access log">
+      {entries.map((entry) => (
+        <article
+          className="share-access-log-entry"
+          role="listitem"
+          key={entry.id}
+        >
+          <div className="share-access-log-primary">
+            <span
+              style={{
+                padding: "2px 7px",
+                borderRadius: "var(--radius-full)",
+                background:
+                  entry.action === "auth_fail"
+                    ? "var(--color-danger-muted)"
+                    : "var(--color-bg-muted)",
+                color:
+                  entry.action === "auth_fail"
+                    ? "var(--color-danger)"
+                    : "var(--color-fg)",
+                fontSize: "var(--text-xs)",
+                fontWeight: 600,
+              }}
+            >
+              {entry.action}
+            </span>
+            <time dateTime={new Date(entry.occurred_at).toISOString()}>
+              {new Date(entry.occurred_at).toLocaleString()}
+            </time>
+          </div>
+          <div className="share-access-log-path">
+            <Icon name="file" size={14} />
+            <code>{entry.path || "Share root"}</code>
+          </div>
+          <div className="share-access-log-client">
+            <span>{entry.ip || "Unknown IP"}</span>
+            {entry.user_agent && (
+              <span title={entry.user_agent}>{entry.user_agent}</span>
+            )}
+          </div>
+          {entry.ip && (
+            <div className="share-access-log-action">
+              <BlockIpButton
+                ip={entry.ip}
+                reason={`access log (${entry.action})`}
+              />
+            </div>
+          )}
+        </article>
+      ))}
     </div>
   );
 }
@@ -2437,8 +2493,10 @@ const modalOverlayStyle: React.CSSProperties = {
 
 const modalPanelStyle: React.CSSProperties = {
   width: "min(720px, 100%)",
+  minWidth: 0,
   maxHeight: "min(760px, calc(100vh - 48px))",
-  overflow: "auto",
+  overflowX: "hidden",
+  overflowY: "auto",
   border: "1px solid var(--color-border)",
   borderRadius: "var(--radius-lg)",
   padding: "var(--space-4)",

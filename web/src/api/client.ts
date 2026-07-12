@@ -390,6 +390,10 @@ export interface FileEntry {
   media_info?: MediaInfo | null;
   image_info?: ImageInfo | null;
   item_count?: number;
+  gallery_feedback?: {
+    marked: boolean;
+    note?: string | null;
+  } | null;
 }
 
 export interface DirectoryListing {

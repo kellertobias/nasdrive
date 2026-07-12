@@ -19,6 +19,43 @@ use crate::thumb::cache::{ThumbFormat, ThumbnailRequest};
 const GALLERY_THUMB_WIDTH: u32 = 480;
 const GALLERY_PREVIEW_WIDTH: u32 = 2048;
 
+#[derive(Clone)]
+struct PreparedGalleryItem {
+    id: String,
+    relative_path: String,
+    source_path: PathBuf,
+}
+
+#[derive(Clone, Copy)]
+enum GalleryAssetKind {
+    Thumbnail,
+    Preview,
+}
+
+impl GalleryAssetKind {
+    fn from_route(asset: &str) -> Option<Self> {
+        match asset {
+            "thumbnail" => Some(Self::Thumbnail),
+            "preview" => Some(Self::Preview),
+            _ => None,
+        }
+    }
+
+    fn width(self) -> u32 {
+        match self {
+            Self::Thumbnail => GALLERY_THUMB_WIDTH,
+            Self::Preview => GALLERY_PREVIEW_WIDTH,
+        }
+    }
+
+    fn ready_column(self) -> &'static str {
+        match self {
+            Self::Thumbnail => "thumbnail_ready",
+            Self::Preview => "preview_ready",
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct GalleryJob {
     pub id: String,
@@ -69,7 +106,7 @@ pub fn spawn_gallery_preparation(state: AppState, share_id: String) {
             let now = now_ms();
             let _ = sqlx::query(
                 "UPDATE gallery_preparation_jobs SET status = 'error', error = $1, updated_at = $2, finished_at = $3 \
-                 WHERE share_id = $4 AND status = 'running'",
+                 WHERE share_id = $4 AND status IN ('indexing', 'thumbnails', 'previews')",
             )
             .bind(e.to_string())
             .bind(now)
@@ -195,10 +232,9 @@ pub async fn public_gallery_asset(
         return e.into_response();
     }
 
-    let width = match asset.as_str() {
-        "thumbnail" => GALLERY_THUMB_WIDTH,
-        "preview" => GALLERY_PREVIEW_WIDTH,
-        _ => {
+    let asset_kind = match GalleryAssetKind::from_route(&asset) {
+        Some(kind) => kind,
+        None => {
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({"error": "asset not found"})),
@@ -233,8 +269,22 @@ pub async fn public_gallery_asset(
         Ok(path) => path,
         Err(e) => return e.into_response(),
     };
-    match generate_gallery_asset(&state, &share, &relative_path, &resolved, width).await {
-        Ok(Some(response)) => response,
+    match generate_gallery_asset(
+        &state,
+        &share,
+        &relative_path,
+        &resolved,
+        asset_kind.width(),
+    )
+    .await
+    {
+        Ok(Some(response)) => {
+            if let Err(e) = mark_gallery_asset_ready(&state, &share.id, &item_id, asset_kind).await
+            {
+                tracing::warn!("failed to mark gallery asset ready: {e}");
+            }
+            response
+        }
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"error": "no gallery asset available"})),
@@ -324,7 +374,7 @@ async fn prepare_gallery(state: AppState, share_id: &str) -> anyhow::Result<()> 
     let now = now_ms();
     sqlx::query(
         "INSERT INTO gallery_preparation_jobs (id, share_id, owner_user_id, status, created_at, updated_at) \
-         VALUES ($1, $2, $3, 'running', $4, $5)",
+         VALUES ($1, $2, $3, 'indexing', $4, $5)",
     )
     .bind(&job_id)
     .bind(&share.id)
@@ -355,6 +405,8 @@ async fn prepare_gallery(state: AppState, share_id: &str) -> anyhow::Result<()> 
         .bind(&share.id)
         .execute(&state.pool)
         .await?;
+
+    let mut prepared_items = Vec::with_capacity(images.len());
 
     for (idx, path) in images.iter().enumerate() {
         let relative_path = relative_path(&base, path);
@@ -400,37 +452,6 @@ async fn prepare_gallery(state: AppState, share_id: &str) -> anyhow::Result<()> 
                 .and_then(|value| parse_exif_datetime(value));
         }
 
-        let mut error = None;
-        let thumbnail_ready =
-            match generate_gallery_asset(&state, &share, &relative_path, path, GALLERY_THUMB_WIDTH)
-                .await
-            {
-                Ok(Some(_)) => true,
-                Ok(None) => false,
-                Err(e) => {
-                    error = Some(e.to_string());
-                    false
-                }
-            };
-        let preview_ready = match generate_gallery_asset(
-            &state,
-            &share,
-            &relative_path,
-            path,
-            GALLERY_PREVIEW_WIDTH,
-        )
-        .await
-        {
-            Ok(Some(_)) => true,
-            Ok(None) => false,
-            Err(e) => {
-                if error.is_none() {
-                    error = Some(e.to_string());
-                }
-                false
-            }
-        };
-
         let item_now = now_ms();
         sqlx::query(
             "INSERT INTO share_gallery_items \
@@ -448,13 +469,19 @@ async fn prepare_gallery(state: AppState, share_id: &str) -> anyhow::Result<()> 
         .bind(height)
         .bind(captured_at)
         .bind(mime_type)
-        .bind(thumbnail_ready)
-        .bind(preview_ready)
-        .bind(error)
+        .bind(false)
+        .bind(false)
+        .bind(Option::<String>::None)
         .bind(item_now)
         .bind(item_now)
         .execute(&state.pool)
         .await?;
+
+        prepared_items.push(PreparedGalleryItem {
+            id: item_id,
+            relative_path,
+            source_path: path.clone(),
+        });
 
         sqlx::query("UPDATE gallery_preparation_jobs SET processed_items = $1, updated_at = $2 WHERE id = $3")
             .bind(i64::try_from(idx + 1).unwrap_or(i64::MAX))
@@ -463,6 +490,23 @@ async fn prepare_gallery(state: AppState, share_id: &str) -> anyhow::Result<()> 
             .execute(&state.pool)
             .await?;
     }
+
+    generate_gallery_assets_for_job(
+        &state,
+        &share,
+        &job_id,
+        &prepared_items,
+        GalleryAssetKind::Thumbnail,
+    )
+    .await?;
+    generate_gallery_assets_for_job(
+        &state,
+        &share,
+        &job_id,
+        &prepared_items,
+        GalleryAssetKind::Preview,
+    )
+    .await?;
 
     let finished = now_ms();
     sqlx::query(
@@ -473,6 +517,63 @@ async fn prepare_gallery(state: AppState, share_id: &str) -> anyhow::Result<()> 
     .bind(&job_id)
     .execute(&state.pool)
     .await?;
+
+    Ok(())
+}
+
+async fn generate_gallery_assets_for_job(
+    state: &AppState,
+    share: &crate::shares::model::Share,
+    job_id: &str,
+    items: &[PreparedGalleryItem],
+    asset_kind: GalleryAssetKind,
+) -> anyhow::Result<()> {
+    let status = match asset_kind {
+        GalleryAssetKind::Thumbnail => "thumbnails",
+        GalleryAssetKind::Preview => "previews",
+    };
+    sqlx::query(
+        "UPDATE gallery_preparation_jobs SET status = $1, total_items = $2, processed_items = 0, updated_at = $3 WHERE id = $4",
+    )
+    .bind(status)
+    .bind(i64::try_from(items.len()).unwrap_or(i64::MAX))
+    .bind(now_ms())
+    .bind(job_id)
+    .execute(&state.pool)
+    .await?;
+
+    for (idx, item) in items.iter().enumerate() {
+        let result = generate_gallery_asset(
+            state,
+            share,
+            &item.relative_path,
+            &item.source_path,
+            asset_kind.width(),
+        )
+        .await;
+
+        match result {
+            Ok(Some(_)) => {
+                mark_gallery_asset_ready(state, &share.id, &item.id, asset_kind).await?;
+            }
+            Ok(None) => {
+                mark_gallery_asset_error(state, &share.id, &item.id, "no gallery asset available")
+                    .await?;
+            }
+            Err(e) => {
+                mark_gallery_asset_error(state, &share.id, &item.id, &e.to_string()).await?;
+            }
+        }
+
+        sqlx::query(
+            "UPDATE gallery_preparation_jobs SET processed_items = $1, updated_at = $2 WHERE id = $3",
+        )
+        .bind(i64::try_from(idx + 1).unwrap_or(i64::MAX))
+        .bind(now_ms())
+        .bind(job_id)
+        .execute(&state.pool)
+        .await?;
+    }
 
     Ok(())
 }
@@ -573,6 +674,44 @@ async fn generate_gallery_asset(
             .body(Body::from(thumb.bytes))
             .unwrap_or_else(|_| internal_error())
     }))
+}
+
+async fn mark_gallery_asset_ready(
+    state: &AppState,
+    share_id: &str,
+    item_id: &str,
+    asset_kind: GalleryAssetKind,
+) -> anyhow::Result<()> {
+    let now = now_ms();
+    let query = format!(
+        "UPDATE share_gallery_items SET {} = TRUE, error = NULL, updated_at = $1 WHERE share_id = $2 AND id = $3",
+        asset_kind.ready_column()
+    );
+    sqlx::query(&query)
+        .bind(now)
+        .bind(share_id)
+        .bind(item_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(())
+}
+
+async fn mark_gallery_asset_error(
+    state: &AppState,
+    share_id: &str,
+    item_id: &str,
+    error: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE share_gallery_items SET error = $1, updated_at = $2 WHERE share_id = $3 AND id = $4",
+    )
+    .bind(error)
+    .bind(now_ms())
+    .bind(share_id)
+    .bind(item_id)
+    .execute(&state.pool)
+    .await?;
+    Ok(())
 }
 
 async fn load_gallery_items(

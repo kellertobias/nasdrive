@@ -4,6 +4,7 @@ import {
   useParams,
 } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import api, { formatApiError, formatApiErrorDetails } from "../api/client";
 import type { FileEntry } from "../api/client";
@@ -157,6 +158,7 @@ function FileBrowser() {
   } = useViewStore();
   const uploadZoneRef = useRef<UploadZoneHandle>(null);
   const mobileUploadZoneRef = useRef<UploadZoneHandle>(null);
+  const mobileListingScrollRef = useRef<HTMLDivElement>(null);
   const listingScrollRef = useRef<HTMLDivElement>(null);
   const errorIdRef = useRef(0);
   const deleteJobIdRef = useRef(0);
@@ -1008,6 +1010,7 @@ function FileBrowser() {
             </div>
 
             <div
+              ref={mobileListingScrollRef}
               style={{
                 position: "relative",
                 flex: 1,
@@ -1098,6 +1101,7 @@ function FileBrowser() {
                   path={path}
                   selectedPaths={selectedPaths}
                   transferJobs={activeTransferJobs}
+                  scrollParentRef={mobileListingScrollRef}
                   onOpen={navigateTo}
                   onSelect={(entryPath) =>
                     useViewStore.getState().select(entryPath)
@@ -2666,6 +2670,7 @@ function MobileFileList({
   path,
   selectedPaths,
   transferJobs,
+  scrollParentRef,
   onOpen,
   onSelect,
   onToggleSelect,
@@ -2677,6 +2682,7 @@ function MobileFileList({
   path: string;
   selectedPaths: Set<string>;
   transferJobs: TransferJob[];
+  scrollParentRef: React.RefObject<HTMLElement | null>;
   onOpen: (entry: FileEntry) => void;
   onSelect: (path: string) => void;
   onToggleSelect: (path: string) => void;
@@ -2701,31 +2707,62 @@ function MobileFileList({
       }),
     [entries, sortDirection, sortField],
   );
+  const columnCount = viewMode === "grid" ? 2 : 1;
+  const rowCount = Math.ceil(sortedEntries.length / columnCount);
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: rowCount,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => (viewMode === "grid" ? 230 : 68),
+    overscan: viewMode === "grid" ? 3 : 8,
+  });
 
   return (
     <div
       role="list"
       aria-label="Files"
       style={{
-        display: "grid",
-        gridTemplateColumns:
-          viewMode === "grid" ? "repeat(2, minmax(0, 1fr))" : "1fr",
-        gap: viewMode === "grid" ? "var(--space-2)" : "var(--space-1)",
+        position: "relative",
+        height: rowVirtualizer.getTotalSize(),
       }}
     >
-      {sortedEntries.map((entry) => {
-        const filePath = path ? `${path}/${entry.name}` : entry.name;
-        const selected = selectedPaths.has(filePath);
-        const icon = getFileIcon(entry);
-        const entryTransferJobs = entry.is_dir
-          ? transferJobsForTarget(transferJobs, root, filePath)
-          : [];
+      {rowVirtualizer.getVirtualItems().map((virtualRow) => (
+        <div
+          key={virtualRow.key}
+          ref={rowVirtualizer.measureElement}
+          data-index={virtualRow.index}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            transform: `translateY(${virtualRow.start}px)`,
+            display: "grid",
+            gridTemplateColumns:
+              viewMode === "grid" ? "repeat(2, minmax(0, 1fr))" : "1fr",
+            gap: viewMode === "grid" ? "var(--space-2)" : "var(--space-1)",
+            paddingBottom:
+              viewMode === "grid" ? "var(--space-2)" : "var(--space-1)",
+          }}
+        >
+          {sortedEntries
+            .slice(
+              virtualRow.index * columnCount,
+              virtualRow.index * columnCount + columnCount,
+            )
+            .map((entry) => {
+              const filePath = path ? `${path}/${entry.name}` : entry.name;
+              const selected = selectedPaths.has(filePath);
+              const icon = getFileIcon(entry);
+              const entryTransferJobs = entry.is_dir
+                ? transferJobsForTarget(transferJobs, root, filePath)
+                : [];
 
-        return (
-          <div
-            key={entry.name}
-            role="listitem"
-            aria-selected={selected}
+              return (
+                <div
+                  key={entry.name}
+                  role="listitem"
+                  aria-selected={selected}
             style={{
               display: "grid",
               gridTemplateColumns:
@@ -2871,9 +2908,11 @@ function MobileFileList({
             >
               <Icon name="moreVertical" size={16} />
             </button>
-          </div>
-        );
-      })}
+                </div>
+              );
+            })}
+        </div>
+      ))}
     </div>
   );
 }

@@ -4,7 +4,10 @@ use axum::{
     http::Uri,
     response::IntoResponse,
 };
+use nasfiles_core::models::{FileEntry, GalleryFeedbackSummary};
 use serde::Deserialize;
+use sqlx::Row;
+use std::collections::HashMap;
 
 use crate::auth::middleware::CurrentUser;
 use crate::fs::{archive, file_jobs, image_info, listing, media_info, ops, roots, stream, zip};
@@ -76,8 +79,10 @@ pub async fn list_directory(
         (status, Json(serde_json::json!({"error": e.to_string()}))).into_response()
     })?;
 
-    let entries = listing::list_directory(&resolved, !state.config.no_server_side_execution)
+    let mut entries = listing::list_directory(&resolved, !state.config.no_server_side_execution)
         .map_err(|e| e.into_response())?;
+    attach_gallery_feedback_to_entries(&state, &user.user_id, &root_key, &query.path, &mut entries)
+        .await;
 
     Ok(Json(serde_json::json!({
         "path": query.path,
@@ -325,6 +330,9 @@ pub async fn file_info(
         None
     };
 
+    let gallery_feedback =
+        load_gallery_feedback_for_path(&state, &user.user_id, &root_key, &query.path).await;
+
     Ok(Json(serde_json::json!({
         "name": name,
         "size": size,
@@ -334,8 +342,98 @@ pub async fn file_info(
         "has_thumbnail": has_thumbnail,
         "media_info": media_info,
         "image_info": image_info,
+        "gallery_feedback": gallery_feedback,
         "path": query.path,
     })))
+}
+
+async fn attach_gallery_feedback_to_entries(
+    state: &AppState,
+    user_id: &str,
+    root_key: &str,
+    parent_path: &str,
+    entries: &mut [FileEntry],
+) {
+    if entries.is_empty() {
+        return;
+    }
+
+    let feedback = load_gallery_feedback_for_root(state, user_id, root_key).await;
+    if feedback.is_empty() {
+        return;
+    }
+
+    for entry in entries.iter_mut() {
+        if entry.is_dir {
+            continue;
+        }
+        let path = join_relative(parent_path, &entry.name);
+        if let Some(summary) = feedback.get(&path) {
+            entry.gallery_feedback = Some(summary.clone());
+        }
+    }
+}
+
+async fn load_gallery_feedback_for_path(
+    state: &AppState,
+    user_id: &str,
+    root_key: &str,
+    path: &str,
+) -> Option<GalleryFeedbackSummary> {
+    load_gallery_feedback_for_root(state, user_id, root_key)
+        .await
+        .remove(path)
+}
+
+async fn load_gallery_feedback_for_root(
+    state: &AppState,
+    user_id: &str,
+    root_key: &str,
+) -> HashMap<String, GalleryFeedbackSummary> {
+    let rows_result = sqlx::query(
+        "SELECT s.relative_path AS share_path, i.relative_path AS item_path, \
+                CASE WHEN f.marked THEN 1 ELSE 0 END AS marked, f.note \
+         FROM share_gallery_feedback f \
+         JOIN share_gallery_items i ON i.share_id = f.share_id AND i.id = f.item_id \
+         JOIN shares s ON s.id = f.share_id \
+         WHERE s.owner_user_id = $1 AND s.root_key = $2 AND s.share_type = 'gallery' \
+           AND (f.marked OR f.note IS NOT NULL)",
+    )
+    .bind(user_id)
+    .bind(root_key)
+    .fetch_all(&state.pool)
+    .await;
+
+    let rows = match rows_result {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!("failed to load gallery feedback for file browser: {e}");
+            return HashMap::new();
+        }
+    };
+
+    let mut out = HashMap::new();
+    for row in rows {
+        let share_path: String = row.get("share_path");
+        let item_path: String = row.get("item_path");
+        let marked = row.get::<i64, _>("marked") != 0;
+        let note = row.get::<Option<String>, _>("note");
+        out.insert(
+            join_relative(&share_path, &item_path),
+            GalleryFeedbackSummary { marked, note },
+        );
+    }
+    out
+}
+
+fn join_relative(parent: &str, child: &str) -> String {
+    if parent.is_empty() {
+        child.to_string()
+    } else if child.is_empty() {
+        parent.to_string()
+    } else {
+        format!("{parent}/{child}")
+    }
 }
 
 // =======================================================================

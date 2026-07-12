@@ -150,6 +150,16 @@ pub struct FileEntry {
     /// Number of direct (non-hidden) children, set for directory entries.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub item_count: Option<u64>,
+    /// Customer proofing feedback from gallery shares owned by the current user.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gallery_feedback: Option<GalleryFeedbackSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GalleryFeedbackSummary {
+    pub marked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Extracted metadata for audio/video files.

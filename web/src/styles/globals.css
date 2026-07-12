@@ -36,6 +36,77 @@ time,
   font-feature-settings: "tnum" 1;
 }
 
+.share-details,
+.share-details section,
+.share-details code {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.share-details code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.share-details table {
+  table-layout: fixed;
+}
+
+.share-access-log {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.share-access-log-entry {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.8fr) minmax(150px, 1fr) minmax(
+      180px,
+      1.25fr
+    ) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.share-access-log-primary,
+.share-access-log-path,
+.share-access-log-client {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.share-access-log-primary {
+  flex-wrap: wrap;
+}
+
+.share-access-log-primary time,
+.share-access-log-client {
+  color: var(--color-fg-muted);
+  font-size: var(--text-xs);
+}
+
+.share-access-log-path code,
+.share-access-log-client span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-access-log-client {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.share-access-log-action {
+  justify-self: end;
+}
+
 /* ---- Focus ring ---- */
 :focus-visible {
   outline: 2px solid var(--color-accent);
@@ -150,6 +221,23 @@ time,
 }
 
 @media (max-width: 720px) {
+  .share-access-log-entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+  }
+
+  .share-access-log-primary,
+  .share-access-log-path,
+  .share-access-log-client {
+    grid-column: 1;
+  }
+
+  .share-access-log-action {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    align-self: center;
+  }
+
   .admin-content {
     padding: var(--space-3) !important;
   }

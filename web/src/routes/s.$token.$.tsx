@@ -1511,6 +1511,7 @@ function PublicGalleryView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [assetFailures, setAssetFailures] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -1588,6 +1589,10 @@ function PublicGalleryView({
     },
     [bearer, token],
   );
+
+  const markAssetFailed = useCallback((itemId: string, asset: "thumbnail" | "preview") => {
+    setAssetFailures((prev) => ({ ...prev, [`${itemId}:${asset}`]: true }));
+  }, []);
 
   return (
     <div
@@ -1707,11 +1712,12 @@ function PublicGalleryView({
                     background: "var(--color-bg-muted)",
                   }}
                 >
-                  {item.thumbnail_ready ? (
+                  {!assetFailures[`${item.id}:thumbnail`] ? (
                     <img
                       src={api.publicGalleryAssetUrl(token, bearer, item.id, "thumbnail")}
                       alt=""
                       loading="lazy"
+                      onError={() => markAssetFailed(item.id, "thumbnail")}
                       style={{ width: "100%", height: "100%", objectFit: "cover" }}
                     />
                   ) : (
@@ -1769,12 +1775,29 @@ function PublicGalleryView({
                 justifyContent: "center",
                 background: "var(--color-bg-muted)",
                 padding: "var(--space-4)",
+                position: "relative",
               }}
             >
-              {selected.preview_ready ? (
+              <button
+                onClick={() => selectOffset(-1)}
+                disabled={selectedIndex <= 0}
+                aria-label="Previous picture"
+                title="Previous picture"
+                style={{
+                  ...galleryNavButtonStyle,
+                  left: "var(--space-4)",
+                  opacity: selectedIndex <= 0 ? 0.35 : 1,
+                  cursor: selectedIndex <= 0 ? "default" : "pointer",
+                }}
+              >
+                <Icon name="arrowLeft" size={18} />
+                <span>Previous</span>
+              </button>
+              {!assetFailures[`${selected.id}:preview`] ? (
                 <img
                   src={api.publicGalleryAssetUrl(token, bearer, selected.id, "preview")}
                   alt={selected.filename}
+                  onError={() => markAssetFailed(selected.id, "preview")}
                   style={{
                     maxWidth: "100%",
                     maxHeight: "100%",
@@ -1787,6 +1810,22 @@ function PublicGalleryView({
                   Preview is not available for this file.
                 </div>
               )}
+              <button
+                onClick={() => selectOffset(1)}
+                disabled={selectedIndex >= items.length - 1}
+                aria-label="Next picture"
+                title="Next picture"
+                style={{
+                  ...galleryNavButtonStyle,
+                  right: "var(--space-4)",
+                  opacity: selectedIndex >= items.length - 1 ? 0.35 : 1,
+                  cursor:
+                    selectedIndex >= items.length - 1 ? "default" : "pointer",
+                }}
+              >
+                <span>Next</span>
+                <Icon name="chevronRight" size={18} />
+              </button>
             </div>
             <section
               className="public-gallery-detail"
@@ -1846,6 +1885,15 @@ function PublicGalleryView({
                   style={{
                     ...primaryButtonStyle,
                     justifyContent: "center",
+                    border: selected.marked
+                      ? "1px solid var(--color-success)"
+                      : primaryButtonStyle.border,
+                    background: selected.marked
+                      ? "var(--color-success)"
+                      : primaryButtonStyle.background,
+                    color: selected.marked
+                      ? "var(--color-accent-fg)"
+                      : primaryButtonStyle.color,
                     opacity: saving[selected.id] ? 0.7 : 1,
                   }}
                 >
@@ -2144,6 +2192,25 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
   fontWeight: 600,
   fontSize: "var(--text-sm)",
+};
+
+const galleryNavButtonStyle: React.CSSProperties = {
+  position: "absolute",
+  top: "50%",
+  transform: "translateY(-50%)",
+  zIndex: 2,
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  padding: "var(--space-2) var(--space-3)",
+  border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius-md)",
+  background: "color-mix(in oklch, var(--color-bg) 88%, transparent)",
+  color: "var(--color-fg)",
+  boxShadow: "var(--shadow-sm)",
+  fontSize: "var(--text-sm)",
+  fontWeight: 600,
+  backdropFilter: "blur(12px)",
 };
 
 const previewOverlayStyle: React.CSSProperties = {
