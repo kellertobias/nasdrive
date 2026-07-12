@@ -674,6 +674,21 @@ export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
               )}
 
               <a
+                href="/shares"
+                style={{
+                  display: "flex", alignItems: "center", gap: "var(--space-2)", width: "100%",
+                  padding: "var(--space-2) var(--space-3)", background: "none", border: "none",
+                  cursor: "pointer", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)",
+                  color: "var(--color-fg)", textDecoration: "none",
+                  transition: `background var(--duration-fast) var(--ease-out)`,
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.background = "var(--color-bg-muted)")}
+                onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <Icon name="share2" size={16} /> Shares
+              </a>
+
+              <a
                 href="/profile"
                 style={{
                   display: "flex",

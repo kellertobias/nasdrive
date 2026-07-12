@@ -190,6 +190,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/shares", get(api::shares::list_shares))
         .route("/shares/{id}", get(api::shares::get_share))
         .route(
+            "/shares/{id}",
+            axum::routing::patch(api::shares::update_share),
+        )
+        .route(
             "/shares/{id}/gallery/feedback",
             get(api::gallery::owner_gallery_feedback),
         )
@@ -207,6 +211,10 @@ async fn main() -> anyhow::Result<()> {
         // Admin routes
         .route("/admin/shares", get(api::admin::list_all_shares))
         .route("/admin/shares/{id}", get(api::admin::get_share_details))
+        .route(
+            "/admin/shares/{id}",
+            axum::routing::patch(api::admin::update_share),
+        )
         .route("/admin/access-log", get(api::admin::list_access_log))
         .route("/admin/ip-blocklist", get(api::admin::list_blocklist))
         .route("/admin/ip-blocklist", post(api::admin::add_blocklist_entry))

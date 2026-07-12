@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use crate::auth::middleware::CurrentUser;
 use crate::fs::listing;
+use crate::shares::model::UpdateShareRequest;
 use crate::state::AppState;
 
 /// Middleware check: require admin.
@@ -58,7 +59,7 @@ pub async fn list_all_shares(
         SELECT s.id, s.owner_user_id, u.display_name AS owner_name,
                s.root_key, s.relative_path,
                CASE WHEN s.is_directory THEN 1 ELSE 0 END AS is_directory,
-               s.target_kind,
+               s.target_kind, s.share_type, s.display_token,
                CASE WHEN s.password_hash IS NOT NULL THEN 1 ELSE 0 END AS has_password,
                CASE WHEN s.allow_upload THEN 1 ELSE 0 END AS allow_upload,
                CASE WHEN s.allow_download THEN 1 ELSE 0 END AS allow_download,
@@ -111,6 +112,8 @@ pub async fn list_all_shares(
                 "relative_path": s.relative_path,
                 "is_directory": s.is_directory != 0,
                 "target_kind": s.target_kind,
+                "share_type": s.share_type,
+                "url": s.display_token.map(|token| format!("{}/s/{}", state.config.base_url.trim_end_matches('/'), token)),
                 "has_password": s.has_password != 0,
                 "allow_upload": s.allow_upload != 0,
                 "allow_download": s.allow_download != 0,
@@ -133,6 +136,16 @@ pub async fn list_all_shares(
     })))
 }
 
+pub async fn update_share(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(share_id): Path<String>,
+    Json(body): Json<UpdateShareRequest>,
+) -> Result<impl IntoResponse, axum::response::Response> {
+    require_admin(&user)?;
+    Ok(crate::api::shares::update_share_for(&state, &share_id, None, body).await)
+}
+
 /// GET /api/admin/shares/{id} — share details, directory listing, and recent access log.
 pub async fn get_share_details(
     State(state): State<AppState>,
@@ -148,7 +161,7 @@ pub async fn get_share_details(
     let access_log = fetch_access_log(&state, 100, 0, Some(&share_id)).await?;
 
     Ok(Json(serde_json::json!({
-        "share": share.to_json(),
+        "share": share.to_json(&state.config.base_url),
         "listing": entries,
         "access_log": access_log,
     })))
@@ -259,7 +272,7 @@ async fn fetch_share_details(
                u.display_name AS owner_name, s.root_kind, s.root_key,
                s.relative_path,
                CASE WHEN s.is_directory THEN 1 ELSE 0 END AS is_directory,
-               s.target_kind,
+               s.target_kind, s.share_type, s.display_token,
                CASE WHEN s.password_hash IS NOT NULL THEN 1 ELSE 0 END AS has_password,
                CASE WHEN s.allow_upload THEN 1 ELSE 0 END AS allow_upload,
                CASE WHEN s.allow_download THEN 1 ELSE 0 END AS allow_download,
@@ -501,6 +514,8 @@ struct ShareRow {
     relative_path: String,
     is_directory: i64,
     target_kind: String,
+    share_type: String,
+    display_token: Option<String>,
     has_password: i64,
     allow_upload: i64,
     allow_download: i64,
@@ -538,6 +553,8 @@ struct ShareDetailRow {
     relative_path: String,
     is_directory: i64,
     target_kind: String,
+    share_type: String,
+    display_token: Option<String>,
     has_password: i64,
     allow_upload: i64,
     allow_download: i64,
@@ -555,7 +572,7 @@ impl ShareDetailRow {
         self.is_directory != 0
     }
 
-    fn to_json(&self) -> serde_json::Value {
+    fn to_json(&self, base_url: &str) -> serde_json::Value {
         serde_json::json!({
             "id": &self.id,
             "owner_user_id": &self.owner_user_id,
@@ -565,6 +582,8 @@ impl ShareDetailRow {
             "relative_path": &self.relative_path,
             "is_directory": self.is_directory(),
             "target_kind": &self.target_kind,
+            "share_type": &self.share_type,
+            "url": self.display_token.as_ref().map(|token| format!("{}/s/{}", base_url.trim_end_matches('/'), token)),
             "has_password": self.has_password != 0,
             "allow_upload": self.allow_upload != 0,
             "allow_download": self.allow_download != 0,

@@ -20,13 +20,15 @@ export const Route = createFileRoute("/admin")({
   component: AdminDashboard,
 });
 
-interface AdminShare {
+export interface AdminShare {
   id: string;
   owner_name: string;
   root_key: string;
   relative_path: string;
   is_directory: boolean;
   target_kind: string;
+  share_type: "typical" | "gallery" | "dropbox" | "collaboration";
+  url: string | null;
   has_password: boolean;
   allow_upload: boolean;
   allow_download: boolean;
@@ -965,31 +967,56 @@ function SftpGuestsTab() {
 // Shares tab
 // ---------------------------------------------------------------------------
 
-function SharesTab({
+export function SharesTab({
   filter,
   setFilter,
   selectedShareId,
   setSelectedShareId,
+  admin = true,
 }: {
   filter: string;
   setFilter: (v: string) => void;
   selectedShareId: string | null;
   setSelectedShareId: (v: string | null) => void;
+  admin?: boolean;
 }) {
+  const queryClient = useQueryClient();
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-shares", filter],
+    queryKey: [admin ? "admin-shares" : "my-shares", filter],
     queryFn: () =>
-      fetch(`/api/admin/shares?limit=200&status=${filter}`, {
+      fetch(admin ? `/api/admin/shares?limit=200&status=${filter}` : "/api/shares", {
         headers: { "X-NasFiles-Request": "1" },
-      }).then((r) => r.json()),
+      }).then(async (r) => {
+        if (!r.ok) throw new Error(await r.text());
+        const result = await r.json();
+        if (!admin && filter !== "all") {
+          const now = Date.now();
+          result.shares = result.shares.filter((share: AdminShare) =>
+            filter === "active" ? !share.revoked_at && (!share.expires_at || share.expires_at > now) :
+            filter === "expired" ? !!share.expires_at && share.expires_at <= now : !!share.revoked_at,
+          );
+        }
+        return result;
+      }),
     staleTime: 10_000,
   });
 
   const shares: AdminShare[] = data?.shares ?? [];
 
+  const updateShare = async (share: AdminShare, body: Record<string, string>) => {
+    const response = await fetch(`${admin ? "/api/admin/shares" : "/api/shares"}/${encodeURIComponent(share.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-NasFiles-Request": "1" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error((await response.json()).error || "Could not update share");
+    await queryClient.invalidateQueries({ queryKey: [admin ? "admin-shares" : "my-shares"] });
+  };
+
   return (
     <div>
-      {selectedShareId && (
+      {admin && selectedShareId && (
         <Modal title="Share details" onClose={() => setSelectedShareId(null)}>
           <ShareDetailsPanel shareId={selectedShareId} />
         </Modal>
@@ -1037,7 +1064,7 @@ function SharesTab({
         <table style={tableStyle}>
           <thead>
             <tr>
-              <th style={thStyle}>Owner</th>
+              {admin && <th style={thStyle}>Owner</th>}
               <th style={thStyle}>Path</th>
               <th style={thStyle}>Type</th>
               <th style={thStyle}>Permissions</th>
@@ -1046,6 +1073,8 @@ function SharesTab({
               <th style={thStyle}>Views</th>
               <th style={thStyle}>Last Access</th>
               <th style={thStyle}>Status</th>
+              <th style={thStyle}>Copy link</th>
+              <th style={thStyle}>Manage</th>
             </tr>
           </thead>
           <tbody>
@@ -1066,11 +1095,11 @@ function SharesTab({
 
               return (
                 <tr key={s.id}>
-                  <td style={tdStyle}>{s.owner_name}</td>
+                  {admin && <td style={tdStyle}>{s.owner_name}</td>}
                   <td style={tdStyle}>
                     <button
                       type="button"
-                      onClick={() => setSelectedShareId(s.id)}
+                      onClick={() => admin && setSelectedShareId(s.id)}
                       style={linkButtonStyle}
                       title="Open share details"
                     >
@@ -1170,6 +1199,31 @@ function SharesTab({
                           s.revoke_reason}
                       </div>
                     )}
+                  </td>
+                  <td style={tdStyle}>
+                    {s.url ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", maxWidth: 240 }}>
+                        <a href={s.url} target="_blank" rel="noreferrer" style={{ ...linkButtonStyle, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.url}>{s.url}</a>
+                        <button type="button" style={actionButtonStyle} onClick={async () => { await navigator.clipboard.writeText(s.url!); setCopiedId(s.id); window.setTimeout(() => setCopiedId(null), 1500); }}>
+                          <Icon name={copiedId === s.id ? "checkCircle" : "copy"} size={15} /> {copiedId === s.id ? "Copied" : "Copy"}
+                        </button>
+                      </div>
+                    ) : <span title="This share predates stored display links">Unavailable</span>}
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                      <select aria-label="Share type" value={s.share_type} disabled={isRevoked} onChange={(event) => updateShare(s, { share_type: event.target.value }).catch((error) => window.alert(String(error)))} style={{ ...actionButtonStyle, appearance: "auto" }}>
+                        <option value="typical">Typical</option>
+                        <option value="gallery">Gallery</option>
+                        <option value="dropbox">Dropbox</option>
+                        <option value="collaboration">Collaboration</option>
+                      </select>
+                      {s.target_kind === "guest" && (
+                        <button type="button" disabled={isRevoked} style={actionButtonStyle} onClick={() => { const password = window.prompt("New share password (minimum 4 characters)"); if (password !== null) updateShare(s, { password }).then(() => window.alert("Password updated")).catch((error) => window.alert(String(error))); }}>
+                          Change password
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

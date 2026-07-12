@@ -79,8 +79,9 @@ pub async fn create_share(
         r#"INSERT INTO shares
            (id, token_hash, owner_user_id, root_kind, root_key, relative_path,
             is_directory, target_kind, target_user_id, password_hash,
-            allow_upload, allow_download, share_type, expires_at, created_at, revoked_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL)"#,
+            allow_upload, allow_download, share_type, expires_at, created_at, revoked_at,
+            display_token)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL, $16)"#,
     )
     .bind(&id)
     .bind(&token_hash)
@@ -97,6 +98,7 @@ pub async fn create_share(
     .bind(request.share_type.as_str())
     .bind(expires_at)
     .bind(now)
+    .bind(&raw_token)
     .execute(pool)
     .await
     .map_err(|e| ShareCreateError::Database(e.to_string()))?;
@@ -123,7 +125,7 @@ pub async fn create_share(
     Ok((share, raw_token))
 }
 
-fn permissions_for_share_type(share_type: &ShareType) -> (bool, bool) {
+pub(crate) fn permissions_for_share_type(share_type: &ShareType) -> (bool, bool) {
     match share_type {
         ShareType::Typical | ShareType::Gallery => (true, false),
         ShareType::Dropbox => (false, true),
@@ -132,7 +134,7 @@ fn permissions_for_share_type(share_type: &ShareType) -> (bool, bool) {
 }
 
 /// Hash a guest-share password using Argon2id.
-fn hash_password(password: &str) -> Result<String, ShareCreateError> {
+pub(crate) fn hash_password(password: &str) -> Result<String, ShareCreateError> {
     use argon2::{
         Argon2,
         password_hash::{PasswordHasher, SaltString, rand_core::OsRng},

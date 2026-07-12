@@ -173,3 +173,9 @@ pub struct ShareMetadata {
 pub struct ShareAuthRequest {
     pub password: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateShareRequest {
+    pub password: Option<String>,
+    pub share_type: Option<ShareType>,
+}

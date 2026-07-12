@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SharesRouteImport } from './routes/shares'
 import { Route as ShareTargetRouteImport } from './routes/share-target'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -16,6 +17,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as STokenSplatRouteImport } from './routes/s.$token.$'
 import { Route as RRootSplatRouteImport } from './routes/r.$root.$'
 
+const SharesRoute = SharesRouteImport.update({
+  id: '/shares',
+  path: '/shares',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShareTargetRoute = ShareTargetRouteImport.update({
   id: '/share-target',
   path: '/share-target',
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/profile': typeof ProfileRoute
   '/share-target': typeof ShareTargetRoute
+  '/shares': typeof SharesRoute
   '/r/$root/$': typeof RRootSplatRoute
   '/s/$token/$': typeof STokenSplatRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/profile': typeof ProfileRoute
   '/share-target': typeof ShareTargetRoute
+  '/shares': typeof SharesRoute
   '/r/$root/$': typeof RRootSplatRoute
   '/s/$token/$': typeof STokenSplatRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/profile': typeof ProfileRoute
   '/share-target': typeof ShareTargetRoute
+  '/shares': typeof SharesRoute
   '/r/$root/$': typeof RRootSplatRoute
   '/s/$token/$': typeof STokenSplatRoute
 }
@@ -79,6 +88,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/profile'
     | '/share-target'
+    | '/shares'
     | '/r/$root/$'
     | '/s/$token/$'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/profile'
     | '/share-target'
+    | '/shares'
     | '/r/$root/$'
     | '/s/$token/$'
   id:
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/profile'
     | '/share-target'
+    | '/shares'
     | '/r/$root/$'
     | '/s/$token/$'
   fileRoutesById: FileRoutesById
@@ -104,12 +116,20 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   ProfileRoute: typeof ProfileRoute
   ShareTargetRoute: typeof ShareTargetRoute
+  SharesRoute: typeof SharesRoute
   RRootSplatRoute: typeof RRootSplatRoute
   STokenSplatRoute: typeof STokenSplatRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/shares': {
+      id: '/shares'
+      path: '/shares'
+      fullPath: '/shares'
+      preLoaderRoute: typeof SharesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/share-target': {
       id: '/share-target'
       path: '/share-target'
@@ -160,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   ProfileRoute: ProfileRoute,
   ShareTargetRoute: ShareTargetRoute,
+  SharesRoute: SharesRoute,
   RRootSplatRoute: RRootSplatRoute,
   STokenSplatRoute: STokenSplatRoute,
 }
