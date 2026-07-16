@@ -896,7 +896,7 @@ function ProfilePage() {
                 }}
               >
                 {[
-                  `[nasfiles]`,
+                  `[nasdrive]`,
                   `type = s3`,
                   `provider = Other`,
                   `access_key_id = ${createdToken.access_key}`,

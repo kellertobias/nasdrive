@@ -32,7 +32,7 @@ export function AppLogo({
             letterSpacing: "var(--tracking-normal)",
           }}
         >
-          nasfiles
+          NASDrive
         </span>
       )}
     </span>
@@ -50,7 +50,7 @@ function LogoMark({ size }: { size: number }) {
       height={size}
       viewBox="0 0 64 64"
       role="img"
-      aria-label="nasfiles"
+      aria-label="NASDrive"
       style={{ display: "block", flexShrink: 0 }}
     >
       <defs>

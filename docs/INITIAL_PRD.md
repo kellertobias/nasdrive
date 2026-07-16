@@ -1,8 +1,8 @@
-# Plan: `nasfiles` — Web UI Cloud File Manager
+# Plan: NASDrive — Web UI Cloud File Manager
 
 ## Context
 
-A greenfield Rust + React app that exposes common folders and per-user home folders from a host filesystem through a browser UI, while those same directories stay usable by SFTP/SMB services running alongside. Unlike Nextcloud-style apps that take ownership of their data dir, `nasfiles` is a thin shell over the real filesystem.
+A greenfield Rust + React app that exposes common folders and per-user home folders from a host filesystem through a browser UI, while those same directories stay usable by SFTP/SMB services running alongside. Unlike Nextcloud-style apps that take ownership of their data dir, NASDrive is a thin shell over the real filesystem.
 
 Auth is SSO-only (SAML2 + OIDC) — no local user database to manage. Users are JIT-provisioned on first login, and SSO groups map to common-folder visibility via env-var config. The only passwords in the system are on guest shares. Shares can target internal users, guests-with-password, or the public, with configurable upload/download/expiry, and every access is logged.
 
@@ -441,7 +441,7 @@ Every milestone includes design review + security review as gates — not a fina
 - **Range**: `curl -H "Range: bytes=1000-1999"` on a large file returns 206 with exactly 1000 bytes.
 - **ZIP**: download ZIP of a nested folder, unzip, diff against source.
 - **Thumbnails**: generate for a sample image/video/PDF; hit endpoint twice and verify second call is a cache hit (instrumented log).
-- **End-to-end smoke**: `docker-compose up` with Keycloak + nasfiles + a bind-mounted folder; log in as two users in different groups and verify each sees only their assigned common folders + their own home folder.
+- **End-to-end smoke**: `docker-compose up` with Keycloak + NASDrive + a bind-mounted folder; log in as two users in different groups and verify each sees only their assigned common folders + their own home folder.
 - **Security-specific**:
   - Path resolver fuzz (`cargo fuzz`) running ≥1h in CI finds no escapes.
   - Automated test: user A cannot access user B's home folder via any endpoint (listing, download, thumbnail, ZIP, or by crafting a share for a path they don't own).

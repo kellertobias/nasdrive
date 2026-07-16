@@ -2,7 +2,7 @@
 
 ## Context
 
-Today nasfiles has a single permission concept per user: `allowed_common_folders: HashSet<String>`, computed once at OIDC callback from group→folder env vars and stored in the session. There is no read/write/share split — anyone with a folder in their set can do anything in it. Group claims are never refreshed: a user who is removed from an SSO group keeps full access for up to 24 h (session lifetime). There is no way to disable personal folders selectively, and a user with no group mapping silently gets a session with zero visible roots rather than being rejected.
+Today NASDrive has a single permission concept per user: `allowed_common_folders: HashSet<String>`, computed once at OIDC callback from group→folder env vars and stored in the session. There is no read/write/share split — anyone with a folder in their set can do anything in it. Group claims are never refreshed: a user who is removed from an SSO group keeps full access for up to 24 h (session lifetime). There is no way to disable personal folders selectively, and a user with no group mapping silently gets a session with zero visible roots rather than being rejected.
 
 We want:
 1. **Live group refresh** from the IdP via a periodic userinfo poll, so permission changes take effect without re-login.
@@ -54,7 +54,7 @@ No DB migration needed (permissions stay in env, not DB).
 ## OIDC callback (`crates/nasfiles-server/src/auth/oidc.rs`)
 
 - After verifying ID token: compute caps, compute `has_home` via new helper (still respect `home_folder_root` presence), compute `is_admin`.
-- New gate: if `folder_permissions` is empty AND `!has_home` AND `!is_admin` → return 403 with a minimal HTML page ("Your account has no access to nasfiles. Contact your administrator.") and **do not** insert `AuthUser` into the session. Log structured event with username + groups.
+- New gate: if `folder_permissions` is empty AND `!has_home` AND `!is_admin` → return 403 with a minimal HTML page ("Your account has no access to NASDrive. Contact your administrator.") and **do not** insert `AuthUser` into the session. Log structured event with username + groups.
 - Store `oidc_access_token` (string) and, if present, `oidc_refresh_token` and `oidc_token_expires_at` (i64 epoch) in session. Store `oidc_groups_refreshed_at` (i64).
 - Persist `last_groups: Vec<String>` in session as well so refresh logic can detect membership changes cheaply (optional but useful for log lines).
 

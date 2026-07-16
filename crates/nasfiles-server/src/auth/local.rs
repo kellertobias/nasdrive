@@ -164,7 +164,7 @@ pub fn build_webauthn(config: &AppConfig) -> anyhow::Result<Option<Webauthn>> {
         .ok_or_else(|| anyhow::anyhow!("BASE_URL must include a host for WebAuthn"))?;
     let mut builder = WebauthnBuilder::new(rp_id, &origin)
         .map_err(|e| anyhow::anyhow!("invalid WebAuthn configuration: {e}"))?
-        .rp_name("nasfiles");
+        .rp_name("NASDrive");
     if config.dev_mode {
         builder = builder.allow_any_port(true);
     }
@@ -1270,7 +1270,7 @@ fn build_totp(secret: &[u8], username: &str) -> Result<TOTP, Response> {
         1,
         30,
         secret.to_vec(),
-        Some("nasfiles".to_string()),
+        Some("NASDrive".to_string()),
         username.to_string(),
     )
     .map_err(|e| {
@@ -1899,7 +1899,7 @@ mod tests {
             1,
             30,
             b"12345678901234567890".to_vec(),
-            Some("nasfiles".to_string()),
+            Some("NASDrive".to_string()),
             "user".to_string(),
         )
         .unwrap()

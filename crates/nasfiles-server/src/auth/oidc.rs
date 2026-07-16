@@ -414,7 +414,7 @@ pub async fn callback(
             );
         }
 
-        let msg = "Your account has no access to nasfiles. Contact your administrator.";
+        let msg = "Your account has no access to NASDrive. Contact your administrator.";
         return Ok((
             axum::http::StatusCode::FORBIDDEN,
             axum::response::Html(format!("<h1>Access Denied</h1><p>{}</p>", msg)),

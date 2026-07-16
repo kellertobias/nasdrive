@@ -1,13 +1,13 @@
 # SSO / OIDC Setup
 
-nasfiles can use an OpenID Connect provider for login and group-based folder permissions. This is the right setup when users already live in Authentik, Keycloak, Zitadel, Dex, Authelia, Google Workspace, Entra ID, or another OIDC-compatible provider.
+NASDrive can use an OpenID Connect provider for login and group-based folder permissions. This is the right setup when users already live in Authentik, Keycloak, Zitadel, Dex, Authelia, Google Workspace, Entra ID, or another OIDC-compatible provider.
 
 ## Overview
 
 SSO mode does three things:
 
 - redirects users to your identity provider for login;
-- maps OIDC claims to nasfiles users;
+- maps OIDC claims to NASDrive users;
 - maps OIDC groups to folder permissions and admin access.
 
 Set:
@@ -106,7 +106,7 @@ Defaults:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SSO_USERNAME_CLAIM` | `preferred_username` | Stable username shown in nasfiles |
+| `SSO_USERNAME_CLAIM` | `preferred_username` | Stable username shown in NASDrive |
 | `SSO_DISPLAY_NAME_CLAIM` | `name` | Human-readable display name |
 | `SSO_PICTURE_CLAIM` | `picture` | Avatar URL |
 | `SSO_GROUPS_CLAIM` | `groups` | Group list used for permissions |

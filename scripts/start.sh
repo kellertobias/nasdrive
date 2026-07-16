@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Start the nasfiles server with sensible dev defaults.
+# Start the NASDrive server with sensible dev defaults.
 # The binary must already be built (run ./scripts/build.sh first).
 #
 # Override any env var before calling this script:
@@ -47,7 +47,7 @@ export COMMON_FOLDERS="${COMMON_FOLDERS:-{}}"
 # Logging
 export RUST_LOG="${RUST_LOG:-info}"
 
-echo "==> Starting nasfiles on $BIND_ADDR"
+echo "==> Starting NASDrive on $BIND_ADDR"
 echo "    Base URL:  $BASE_URL"
 echo "    Database:  $DB_URL"
 echo "    Dev mode:  $NASFILES_DEV"

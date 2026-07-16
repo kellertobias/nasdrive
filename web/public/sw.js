@@ -143,7 +143,7 @@ async function navigationFallback(request) {
     const cachedShell = await caches.match("/");
     if (cachedShell) return cachedShell;
     return new Response(
-      `Nasfiles could not load this page while the server was unavailable.\n\n${String(error)}`,
+      `NASDrive could not load this page while the server was unavailable.\n\n${String(error)}`,
       {
         status: 503,
         statusText: "Service Unavailable",

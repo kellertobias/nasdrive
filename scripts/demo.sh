@@ -67,7 +67,7 @@ export SSO_ADMIN_GROUPS="${SSO_ADMIN_GROUPS:-STAFF}"
 export NASFILES_DEMO_TRANSFER_DELAY_MS="${NASFILES_DEMO_TRANSFER_DELAY_MS:-600}"
 export RUST_LOG="${RUST_LOG:-info}"
 
-echo "==> Starting nasfiles screenshot demo"
+echo "==> Starting NASDrive screenshot demo"
 echo "    URL:    $BASE_URL"
 echo "    Folder: $DEMO_ROOT"
 echo "    Shares: $SSO_DEFAULT_COMMON_FOLDERS"

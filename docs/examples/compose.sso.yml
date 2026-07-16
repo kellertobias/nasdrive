@@ -1,7 +1,7 @@
 services:
   nasfiles:
     build: .
-    # image: ghcr.io/your-org/nasfiles:latest
+    # image: ghcr.io/your-github-owner/nasdrive:latest
     restart: unless-stopped
     ports:
       - "2222:2222"

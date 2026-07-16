@@ -100,8 +100,8 @@ pub async fn create_token(
     }
 
     let id = uuid::Uuid::new_v4().to_string();
-    // access_key: "NASFILES" prefix + 16 random chars (total ~24 chars, URL-safe)
-    let access_key = format!("NASFILES{}", tokens::generate_share_token(12));
+    // access_key: "NASDRIVE" prefix + 16 random chars (total ~24 chars, URL-safe)
+    let access_key = format!("NASDRIVE{}", tokens::generate_share_token(12));
     // secret_key: 32 random bytes base64url-encoded
     let secret_key = tokens::generate_share_token(32);
 

@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting nasfiles server");
+    tracing::info!("Starting NASDrive server");
 
     if config.dev_mode {
         tracing::warn!("⚠️  Running in development mode — auth bypass enabled");

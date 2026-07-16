@@ -1,6 +1,6 @@
 # TrueNAS Example
 
-nasfiles works well on TrueNAS because it does not need to own your storage. You can mount existing datasets into the container and expose them through a browser UI while SMB/NFS shares keep working.
+NASDrive works well on TrueNAS because it does not need to own your storage. You can mount existing datasets into the container and expose them through a browser UI while SMB/NFS shares keep working.
 
 This guide uses TrueNAS SCALE terminology. Exact labels may vary between TrueNAS releases.
 
@@ -19,7 +19,7 @@ Recommended use:
 
 | Dataset | Mounted as | Purpose |
 |---|---|---|
-| `/mnt/tank/apps/nasfiles` | `/data` | nasfiles database, sessions, thumbnails, SFTP host key |
+| `/mnt/tank/apps/nasfiles` | `/data` | NASDrive database, sessions, thumbnails, SFTP host key |
 | `/mnt/tank/media` | `/mnt/media` | read-only media library |
 | `/mnt/tank/documents` | `/mnt/documents` | read/write documents |
 | `/mnt/tank/projects` | `/mnt/projects` | read/write project files |
@@ -32,7 +32,7 @@ In TrueNAS SCALE:
 
 1. Open **Apps**.
 2. Choose **Discover Apps** or **Custom App**.
-3. Create a custom container app for nasfiles.
+3. Create a custom container app for NASDrive.
 4. Set the web port to `8080`.
 5. Add host-path storage mounts.
 6. Add environment variables.
@@ -43,14 +43,14 @@ In TrueNAS SCALE:
 If you build locally from this repository, use your own image tag after pushing it to a registry:
 
 ```text
-registry.example.com/nasfiles:latest
+ghcr.io/your-github-owner/nasdrive:latest
 ```
 
 If you deploy from a checkout through Compose support, use the compose example below instead.
 
 ### Ports And HTTPS
 
-For production, put the web UI behind Traefik and use HTTPS. If Traefik runs as a Docker app on the same host, route it to the nasfiles app on port `8080`. If Traefik runs somewhere else on your network, point a router or service at the TrueNAS host and port `8080`.
+For production, put the web UI behind Traefik and use HTTPS. If Traefik runs as a Docker app on the same host, route it to the NASDrive app on port `8080`. If Traefik runs somewhere else on your network, point a router or service at the TrueNAS host and port `8080`.
 
 Expose internally or on the LAN:
 
@@ -98,7 +98,7 @@ If your TrueNAS setup supports deploying Compose apps, adapt this:
 ```yaml
 services:
   nasfiles:
-    image: registry.example.com/nasfiles:latest
+    image: ghcr.io/your-github-owner/nasdrive:latest
     restart: unless-stopped
     ports:
       - "2222:2222"
@@ -177,23 +177,23 @@ Set your OIDC redirect URI to:
 https://files.example.com/auth/oidc/callback
 ```
 
-Put nasfiles behind Traefik when using SSO. `BASE_URL` should be the final public HTTPS URL that users see.
+Put NASDrive behind Traefik when using SSO. `BASE_URL` should be the final public HTTPS URL that users see.
 
 ## Permissions
 
-The container user must be able to read/write the mounted datasets according to the permissions you want nasfiles to have.
+The container user must be able to read/write the mounted datasets according to the permissions you want NASDrive to have.
 
 Typical approaches:
 
 - run the app with a TrueNAS app user that has ACL entries on the datasets;
 - mount read-only datasets with `:ro`;
-- create a dedicated `nasfiles` user/group and grant it access to only the datasets exposed in `COMMON_FOLDERS`.
+- create a dedicated `nasdrive` user/group and grant it access to only the datasets exposed in `COMMON_FOLDERS`.
 
-Remember that nasfiles cannot write where the container does not have filesystem permission, even if the UI grants write access.
+Remember that NASDrive cannot write where the container does not have filesystem permission, even if the UI grants write access.
 
 ## SMB/NFS Compatibility
 
-nasfiles operates on the same files as SMB and NFS. That is intentional.
+NASDrive operates on the same files as SMB and NFS. That is intentional.
 
 Practical tips:
 

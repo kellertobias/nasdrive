@@ -27,10 +27,10 @@ SAMPLE_DIR="$PROJECT_ROOT/data/sample-files"
 if [ ! -d "$SAMPLE_DIR" ]; then
     echo "==> Creating sample files in $SAMPLE_DIR"
     mkdir -p "$SAMPLE_DIR/Documents" "$SAMPLE_DIR/Photos" "$SAMPLE_DIR/Projects" "$SAMPLE_DIR/Media"
-    echo "# Welcome to nasfiles" > "$SAMPLE_DIR/Documents/README.md"
+    echo "# Welcome to NASDrive" > "$SAMPLE_DIR/Documents/README.md"
     echo "This is a sample text file for testing." > "$SAMPLE_DIR/Documents/notes.txt"
     echo '{"key": "value", "nested": {"a": 1}}' > "$SAMPLE_DIR/Documents/config.json"
-    echo "fn main() { println!(\"Hello from nasfiles!\"); }" > "$SAMPLE_DIR/Projects/main.rs"
+    echo "fn main() { println!(\"Hello from NASDrive!\"); }" > "$SAMPLE_DIR/Projects/main.rs"
     echo "console.log('hello world');" > "$SAMPLE_DIR/Projects/index.js"
     
     if [ -d "$PROJECT_ROOT/test-data" ]; then

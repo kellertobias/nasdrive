@@ -1,6 +1,6 @@
 {
-  "name": "NasFiles",
-  "short_name": "NasFiles",
+  "name": "NASDrive",
+  "short_name": "NASDrive",
   "description": "Browse, preview, share, and upload files.",
   "id": "/",
   "start_url": "/",

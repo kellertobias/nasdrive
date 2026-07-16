@@ -1,6 +1,6 @@
 # Configuration Reference
 
-nasfiles is configured with environment variables.
+NASDrive is configured with environment variables.
 
 ## Required In Production
 
@@ -27,7 +27,7 @@ nasfiles is configured with environment variables.
 
 ## Reverse Proxy
 
-The Docker Compose examples assume Traefik terminates HTTPS and forwards requests to nasfiles on container port `8080`. Keep `BASE_URL` set to the public HTTPS URL, attach the service to Traefik's external Docker network, and publish the SFTP port separately if you enable SFTP.
+The Docker Compose examples assume Traefik terminates HTTPS and forwards requests to NASDrive on container port `8080`. Keep `BASE_URL` set to the public HTTPS URL, attach the service to Traefik's external Docker network, and publish the SFTP port separately if you enable SFTP.
 
 Example labels:
 
@@ -229,10 +229,10 @@ Share credentials use `share` as the single bucket name and are scoped to the sh
 ### rclone configuration
 
 ```ini
-[nasfiles]
+[nasdrive]
 type = s3
 provider = Other
-access_key_id = NASFILES...
+access_key_id = NASDRIVE...
 secret_access_key = ...
 endpoint = https://your-host/s3
 force_path_style = true

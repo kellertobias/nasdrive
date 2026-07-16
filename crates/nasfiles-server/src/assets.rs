@@ -165,7 +165,7 @@ mod og {
 
     fn not_a_share(app_icon: String, url: String) -> Context {
         Context {
-            title: "NasFiles - Your Self Hosted Drive".to_string(),
+            title: "NASDrive - Your Self Hosted Drive".to_string(),
             description: "Log in to see the files.".to_string(),
             image: app_icon,
             url,

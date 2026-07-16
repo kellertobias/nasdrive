@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the nasfiles frontend (Vite + React)
+# Build the NASDrive frontend (Vite + React)
 # Output: web/dist/
 
 cd "$(dirname "$0")/../web"

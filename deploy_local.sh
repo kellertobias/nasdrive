@@ -70,4 +70,4 @@ echo "✅ Image cached locally."
 echo "➡️ Deploying application configuration via OpenTofu..."
 tofu apply -auto-approve
 
-echo "✨ NASFiles local stack update complete!"
+echo "✨ NASDrive local stack update complete!"

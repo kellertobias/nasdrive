@@ -3,7 +3,7 @@ services:
     # Use `build: .` when running from a checkout.
     build: .
     # If you publish an image, replace build with:
-    # image: ghcr.io/your-org/nasfiles:latest
+    # image: ghcr.io/your-github-owner/nasdrive:latest
     restart: unless-stopped
     ports:
       # Optional SFTP server for normal users and temporary guests.

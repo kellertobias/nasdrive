@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the nasfiles backend (Rust).
+# Build the NASDrive backend (Rust).
 # Embeds the frontend via rust-embed, so you must build the frontend first.
 #
 # Usage:

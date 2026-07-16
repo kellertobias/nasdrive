@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="web/public/favicon.svg" alt="NASFiles logo" width="96" height="96">
+  <img src="web/public/favicon.svg" alt="NASDrive logo" width="96" height="96">
 </p>
 
-<h1 align="center">NASFiles by Tobisk</h1>
+<h1 align="center">NASDrive by Tobisk</h1>
 
-NASFiles is a small, fast cloud solution & web file manager for your home server or small business file share.
+NASDrive is a small, fast cloud solution & web file manager for your home server or small business file share.
 
 It is not trying to replace full personal-cloud platforms like ownCloud or Nextcloud at least not on its own.
 
-NASFiles focuses on the part that matters for many NAS-Style setups: a usable web-based file manager with cloud-like sharing, previews, uploads, and optional SFTP and secure guest access, all with a small footprint.
+NASDrive focuses on the part that matters for many NAS-style setups: a usable web-based file manager with cloud-like sharing, previews, uploads, and optional SFTP and secure guest access, all with a small footprint.
 
 The underlying filesystem stays the source of truth. Your files remain normal files and folders, so the same content can still be served by SMB, NFS, SFTP, backup jobs, media tools, shell scripts, and the other services already running on your NAS.
 
@@ -33,7 +33,7 @@ The underlying filesystem stays the source of truth. Your files remain normal fi
 
 We are not trying to replace Nextcloud, Dropbox, or a full document collaboration suite. We focus on the part the these originally became successful for - file management and sharing, but that with dedication and a way smaller footprint.
 
-![NASFiles file manager showing thumbnails, folder navigation, and details](docs/assets/screenshots/main-app.png)
+![NASDrive file manager showing thumbnails, folder navigation, and details](docs/assets/screenshots/main-app.png)
 
 ## Quick Start
 
@@ -62,7 +62,7 @@ For complete setup guides, see:
 - [Configuration reference](docs/configuration.md)
 - [Security model & operational notes](docs/security.md)
 
-we sadly do not yet offer prebuilt docker images, this will follow in a future update.
+Prebuilt images are published to `ghcr.io/<github-owner>/nasdrive:latest` by GitHub Actions. The existing Forgejo pipeline continues to publish the fixed `nasfiles` image name used by the hosted deployment.
 
 ## Features
 
@@ -75,9 +75,9 @@ we sadly do not yet offer prebuilt docker images, this will follow in a future u
 - Move, copy, rename, delete, and create-folder operations
 - Streaming ZIP downloads for selected files or folders
 
-![NASFiles macOS-style column view browsing files](docs/assets/screenshots/column-view.png)
+![NASDrive macOS-style column view browsing files](docs/assets/screenshots/column-view.png)
 
-![NASFiles drag and drop across browser windows](docs/assets/screenshots/drag-n-drop-support.png)
+![NASDrive drag and drop across browser windows](docs/assets/screenshots/drag-n-drop-support.png)
 
 ### Previews
 
@@ -88,7 +88,7 @@ we sadly do not yet offer prebuilt docker images, this will follow in a future u
 - Markdown and code previews
 - Archive browsing and extraction when server-side execution is enabled
 
-![NASFiles media previews for documents, music, and video](docs/assets/screenshots/media-preview.png)
+![NASDrive media previews for documents, music, and video](docs/assets/screenshots/media-preview.png)
 
 ### Sharing And Access
 
@@ -107,8 +107,8 @@ Any user can create long-lived personal API tokens from their profile page and u
 Tools that work out of the box:
 
 ```ini
-# rclone — rclone ls nasfiles:home/
-[nasfiles]
+# rclone — rclone ls nasdrive:home/
+[nasdrive]
 type = s3
 provider = Other
 access_key_id = <your_access_key>
@@ -128,11 +128,11 @@ The S3 endpoint implements `ListBuckets`, `HeadBucket`, `ListObjectsV2`, `HeadOb
 - OIDC/SSO mode for identity-provider-backed deployments
 - Group-to-folder permission mapping for SSO users
 
-![NASFiles user administration screen](docs/assets/screenshots/user-admin.png)
+![NASDrive user administration screen](docs/assets/screenshots/user-admin.png)
 
 ## How It Works
 
-NASFiles mounts one or more host paths as named roots:
+NASDrive mounts one or more host paths as named roots:
 
 ```text
 COMMON_FOLDERS='{"Media":"/srv/media","Documents":"/srv/docs"}'
@@ -146,7 +146,7 @@ On installations with many shares you can tidy the sidebar by grouping shares un
 Browser UI
    |
    v
-NASFiles server
+NASDrive server
    |-- SQLite/Postgres metadata
    |-- thumbnail/cache data
    `-- configured host folders
@@ -154,7 +154,7 @@ NASFiles server
 
 ## Deployment Notes
 
-- Put NASFiles behind HTTPS for real deployments. The compose examples use Traefik labels for this.
+- Put NASDrive behind HTTPS for real deployments. The compose examples use Traefik labels for this.
 - Set a stable `SESSION_SECRET`; changing it logs users out.
 - Mount your data folders read/write only when users should be able to upload or modify files.
 - Keep `DATA_DIR` on persistent storage.

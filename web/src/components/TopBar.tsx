@@ -292,7 +292,7 @@ export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
         type="button"
         onClick={hasSidebar ? undefined : navigateToFiles}
         title={hasSidebar ? undefined : "Back to files"}
-        aria-label="nasfiles"
+        aria-label="NASDrive"
         style={{
           background: "none",
           border: "none",

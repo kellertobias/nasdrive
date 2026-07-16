@@ -87,7 +87,7 @@ function ShareTargetPage() {
       <CenteredShell>
         <AppLogo size={64} wordmarkSize={24} />
         <p style={mutedTextStyle}>
-          Sign in to upload the shared item to your NasFiles folder.
+          Sign in to upload the shared item to your NASDrive folder.
         </p>
         <Link to="/" style={primaryLinkStyle}>
           Sign in

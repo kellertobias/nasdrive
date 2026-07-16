@@ -1,6 +1,6 @@
 # Docker Compose Setup
 
-This guide runs nasfiles with local users. It is the simplest setup for a home NAS, lab server, or small team share.
+This guide runs NASDrive with local users. It is the simplest setup for a home NAS, lab server, or small team share.
 
 ## What You Get
 
@@ -52,7 +52,7 @@ openssl rand -hex 64
 
 Use a setup password with at least 12 characters. After the first login, change it in the UI or create separate users and stop using the bootstrap password operationally.
 
-## 3. Start nasfiles
+## 3. Start NASDrive
 
 ```bash
 docker compose up -d --build
@@ -95,7 +95,7 @@ volumes:
   - /mnt/storage/documents:/files/documents
 ```
 
-Use `:ro` on a volume if nasfiles should not write to it:
+Use `:ro` on a volume if NASDrive should not write to it:
 
 ```yaml
 volumes:
@@ -113,7 +113,7 @@ volumes:
   - /mnt/nasfiles-homes:/homes
 ```
 
-When a user has home access, nasfiles creates and exposes their personal folder.
+When a user has home access, NASDrive creates and exposes their personal folder.
 
 ## 7. Optional SFTP
 
@@ -139,7 +139,7 @@ SFTP authentication is public-key only.
 
 ## 8. Run Behind A Reverse Proxy
 
-The example compose file is already configured for Traefik. It does not publish the HTTP port directly; instead, Traefik discovers nasfiles through Docker labels:
+The example compose file is already configured for Traefik. It does not publish the HTTP port directly; instead, Traefik discovers NASDrive through Docker labels:
 
 ```yaml
 labels:

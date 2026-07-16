@@ -701,7 +701,7 @@ pub async fn share_s3_credentials(
 
     // Issue temporary S3 credentials
     let id = uuid::Uuid::new_v4().to_string();
-    let access_key = format!("NASFILES{}", tokens::generate_share_token(12));
+    let access_key = format!("NASDRIVE{}", tokens::generate_share_token(12));
     let secret_key = tokens::generate_share_token(32);
     let now = chrono::Utc::now().timestamp_millis();
 
