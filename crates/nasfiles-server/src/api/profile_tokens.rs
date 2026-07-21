@@ -85,6 +85,15 @@ pub async fn list_tokens(
     Json(serde_json::json!({ "tokens": tokens }))
 }
 
+// @tour s3-api:90 Where credentials come from
+// The session-authenticated counterpart, mounted under the profile API. The access key is a
+// fixed prefix plus a random token; the secret is a separate random token returned exactly
+// once and stored only as ciphertext.
+//
+// `list_tokens` never returns a secret, `renew_token` extends the expiry, and
+// `revoke_token` sets the revocation timestamp — the two fields the S3 credential lookup
+// reads on every request.
+
 /// POST /api/profile/api-tokens
 pub async fn create_token(
     State(state): State<AppState>,

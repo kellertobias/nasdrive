@@ -538,6 +538,14 @@ pub async fn move_entries(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// @tour file-transfers:50 The handler that validates nothing
+// It extracts state, `CurrentUser(user)`, the root key and a `TransferRequest`, then does
+// exactly two things: `create_transfer_job` and `spawn_file_job`.
+//
+// No path or ACL validation happens here, on purpose. A job recovered after a restart must
+// re-run those checks with the original caller's permissions anyway, so the worker has to
+// be able to do them — doing them twice would just be a second place to get them wrong.
+
 /// POST /api/files/:root/transfer — copy or move entries to another root/directory.
 pub async fn transfer_entries(
     State(state): State<AppState>,

@@ -39,6 +39,15 @@ function IndexPage() {
     queryClient.invalidateQueries({ queryKey: ["me"] });
   };
 
+  // @tour authentication:10 The login form fires a mutation
+  // The entry point for everything that follows. Before sending anything it calls
+  // `trustedTotpProof(username)` to see whether this browser was previously marked as a
+  // [trusted device](glossary:trusted-device), and passes the result as `trusted_device`.
+  //
+  // `onSuccess` branches on `result.requires_totp`: either it stashes `result.challenge_id`
+  // for the second-factor prompt, or it calls `afterLogin()`, which invalidates the
+  // `["me"]` query so the app re-fetches identity.
+
   const loginMutation = useMutation({
     mutationFn: async () => {
       const trusted_device = await trustedTotpProof(username);

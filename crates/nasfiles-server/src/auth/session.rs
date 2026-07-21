@@ -13,6 +13,15 @@ pub enum PersistentSessionStore {
 }
 
 impl PersistentSessionStore {
+    // @tour authentication:60 Sessions live in the database
+    // `PersistentSessionStore` is a two-variant enum over `SqliteStore` and
+    // `PostgresStore`, chosen by sniffing the `DB_URL` scheme and rejecting anything else.
+    // It runs `store.migrate()` at connect time, and the hand-written `impl SessionStore`
+    // forwards `create`/`save`/`load`/`delete` to whichever backend was selected.
+    //
+    // Because sessions are rows rather than signed cookies, `session.delete()` on logout is
+    // a genuine server-side revoke.
+
     pub async fn connect(db_url: &str) -> anyhow::Result<Self> {
         if is_sqlite_url(db_url) {
             let pool = sqlx::sqlite::SqlitePoolOptions::new()

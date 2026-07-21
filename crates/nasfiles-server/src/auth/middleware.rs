@@ -8,6 +8,16 @@ use nasfiles_core::models::AuthUser;
 use crate::config::{self, AuthMode};
 use crate::state::AppState;
 
+// @tour authentication:130 The gate every protected request passes
+// Applied once in `main.rs` via `middleware::from_fn_with_state` over the whole `/api`
+// router. It resolves the user three ways depending on mode:
+// `refresh::maybe_refresh_groups` for SSO, `local::current_session_user` for local auth,
+// and a plain session read otherwise.
+//
+// It then re-checks the `X-NasFiles-Request` header for state-changing methods, and finally
+// inserts the resolved `AuthUser` into `request.extensions_mut()` so handlers can extract
+// it.
+
 /// Extract `AuthUser` from session. Returns 401 if not authenticated.
 pub async fn require_auth(
     State(state): State<AppState>,
@@ -15,6 +25,16 @@ pub async fn require_auth(
     request: Request,
     next: Next,
 ) -> Result<Response, Response> {
+    // @tour comment Dev bypass skips every revalidation
+    // With `dev_mode` on and `dev_user` configured, the middleware fabricates an `AuthUser`
+    // with `user_id: "dev-user-id"` and *persists it into the session*. It also skips
+    // `maybe_refresh_groups` and `current_session_user` entirely, so none of the
+    // per-request revalidation runs.
+    //
+    // This is what `auth_config`'s `dev_auth_bypass` flag surfaces, and what
+    // `DevModeBanner` renders as a red bar in the UI. It must never be enabled in
+    // production.
+
     // Dev bypass mode: inject a fake user
     if state.config.dev_mode
         && let Some(ref dev_user_config) = state.config.dev_user

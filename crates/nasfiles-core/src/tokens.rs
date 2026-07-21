@@ -4,6 +4,15 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
+// @tour share-management:70 Token generation
+// `generate_share_token` fills `byte_length` random bytes and base64url-encodes them
+// without padding; `create.rs` passes `config.share_token_bytes`. `hash_token` just below
+// SHA-256s the token and hex-encodes it, and `token_prefix` exists so logs can reference a
+// token without printing it.
+//
+// Read `hash_token`'s doc comment carefully, then read the callout on the INSERT in
+// `create.rs` — the two do not quite agree.
+
 /// Generate a cryptographically random share token.
 /// Returns the raw token bytes base64url-encoded.
 pub fn generate_share_token(byte_length: usize) -> String {

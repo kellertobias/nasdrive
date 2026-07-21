@@ -373,6 +373,16 @@ pub struct TransferSpec<'a> {
     pub operation: TransferOperation,
 }
 
+// @tour comment Dead code that looks authoritative
+// This function and its helpers are all `#[allow(dead_code)]` — nothing calls them. The
+// live transfer implementation is entirely in `file_jobs.rs`, which uses a durable item
+// table instead of this in-memory `AtomicU64` progress model.
+//
+// It is worth knowing about precisely because it reads like the real thing. By contrast
+// `ops::move_entries` above **is** live: it backs `POST /api/files/{root}/move` and does a
+// synchronous, non-resumable rename loop that aborts on the first collision, leaving
+// earlier entries already moved.
+
 /// Copy or move entries between two roots and report server-side progress.
 #[allow(dead_code)]
 pub async fn transfer_entries_with_progress(

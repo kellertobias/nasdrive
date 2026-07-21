@@ -13,6 +13,14 @@ use crate::shares::{
 };
 use crate::state::AppState;
 
+// @tour share-management:40 The HTTP handler
+// It extracts `CurrentUser(user)` — share creation is always authenticated — and delegates
+// to `create::create_share`, receiving a `(share, raw_token)` pair. A `gallery` share
+// additionally spawns background preview preparation.
+//
+// It then formats `share_url` as `{base_url}/s/{raw_token}`. This is the only endpoint that
+// ever emits a freshly generated token.
+
 /// POST /api/shares — create a new share.
 pub async fn create_share(
     State(state): State<AppState>,
@@ -42,6 +50,14 @@ pub async fn create_share(
         "allow_download": share.allow_download,
     })))
 }
+
+// @tour share-management:80 The owner's share list
+// Scoped by `WHERE s.owner_user_id = $1`, joining in `access_count` and `last_accessed_at`
+// as correlated subqueries over `share_access_log`. It reads `s.display_token` and rebuilds
+// a usable URL — which is how a share link is recoverable after creation.
+//
+// Booleans are normalized with `CASE WHEN ... THEN 1 ELSE 0` because the `sqlx::Any` driver
+// has to satisfy both SQLite and Postgres.
 
 /// GET /api/shares — list current user's shares.
 pub async fn list_shares(
@@ -282,6 +298,16 @@ pub async fn get_share(
         }
     }
 }
+
+// @tour share-management:120 Editing and revoking
+// Revocation is a soft delete guarded by `id = $2 AND owner_user_id = $3 AND revoked_at IS
+// NULL`, returning 404 when nothing was updated so a non-owner cannot distinguish "not
+// yours" from "already revoked".
+//
+// Editing lives in `update_share_for`, which re-checks ownership, refuses passwords on
+// non-guest shares, and re-derives permissions through
+// `create::permissions_for_share_type`. The `revoke_reason` column is what lets
+// `share_reconcile.rs` later tell manual revocations apart from automatic ones.
 
 /// DELETE /api/shares/:id — revoke a share (sets revoked_at).
 pub async fn revoke_share(

@@ -25,6 +25,15 @@ use crate::{auth, config};
 const MAX_SFTP_READ_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SFTP_WRITE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SFTP_READDIR_ENTRIES: usize = 256;
+// @tour comment Per-session resource limits
+// Handles live in a plain map and clients are not obliged to send `close`, so both
+// `opendir` and `open` bail once the cap is reached — each open directory pins a real file
+// descriptor.
+//
+// The sibling constants cap a single read and a single write at 4 MiB each and a readdir
+// page at 256 entries, and the client packet limit is handed to `russh_sftp` so oversized
+// packets are rejected before allocation.
+
 /// Upper bound on concurrently open SFTP handles (files + directories) per
 /// session. Each open directory holds a live file descriptor until `close`, and
 /// clients are not required to close handles, so without a cap a single session
@@ -36,6 +45,14 @@ const MAX_SFTP_CLIENT_PACKET_BYTES: u32 = (MAX_SFTP_WRITE_BYTES as u32) + 1024;
 pub struct SftpServer {
     state: AppState,
 }
+
+// @tour sftp-server:20 Bringing up the russh listener
+// `spawn` loads the host key, disables compression, and sets an `auth_rejection_time` of 3
+// seconds with an initial 250 ms delay to slow credential stuffing.
+//
+// It then detaches a `tokio::spawn` running the listener so `main` can continue booting the
+// HTTP stack. Note the function returns `Ok(())` immediately — a later listener failure
+// surfaces only as a `tracing::error!`, never as a startup error.
 
 pub async fn spawn(state: AppState) -> anyhow::Result<()> {
     let key = load_or_create_host_key(&state.config.sftp_host_key_path)?;
@@ -98,6 +115,15 @@ impl SshSession {
             partial_success: false,
         }
     }
+
+    // @tour sftp-server:40 Every auth attempt hits the guard first
+    // One `SshSession` is built per TCP connection, carrying the remote address and an
+    // empty principal. This guard runs at the top of all four auth callbacks: it rejects
+    // blocklisted IPs, and a `root` username triggers an immediate block plus an audit row
+    // before rejecting.
+    //
+    // `auth_none` and `auth_password` then unconditionally reject. Password authentication
+    // is never accepted by this server, under any configuration.
 
     /// Pre-authentication guard applied to every auth attempt. Returns
     /// `Some(reject)` when the connection must be denied outright:
@@ -198,6 +224,14 @@ impl russh::server::Handler for SshSession {
         }
     }
 
+    // @tour sftp-server:50 Public-key authentication
+    // `russh` first calls `auth_publickey_offered`, which only checks that the key exists;
+    // the real decision happens here, after signature verification.
+    //
+    // The offered key is normalized, `resolve_principal` looks it up, and on success
+    // `mark_key_used` stamps `last_used_at` before the principal and fingerprint are stored
+    // on the session. This is the only place `self.principal` is ever set.
+
     async fn auth_publickey(
         &mut self,
         user: &str,
@@ -277,6 +311,15 @@ impl russh::server::Handler for SshSession {
         );
         Ok(())
     }
+
+    // @tour sftp-server:80 Opening the SFTP subsystem
+    // `channel_open_session` stashes the channel; this handler pops it back out. Anything
+    // other than the literal name `sftp` gets a channel failure — there is no shell, no
+    // `exec`, and no PTY.
+    //
+    // It then re-checks that both the principal and the fingerprint are present, so a
+    // channel can never reach the SFTP handler unauthenticated, and finally hands the
+    // stream to `russh_sftp` with a capped client packet length.
 
     async fn subsystem_request(
         &mut self,
@@ -503,6 +546,16 @@ impl SftpSession {
         }
     }
 
+    // @tour sftp-server:110 Path resolution for a real user
+    // The client path is first normalized purely lexically, collapsing `.` and popping on
+    // `..`, with `/` short-circuiting to the virtual root. The first segment is then
+    // matched against visible roots by either display name *or* key, so both `/Personal/x`
+    // and `/~/x` work.
+    //
+    // The remainder goes through `roots::resolve_root` for the capability check and
+    // `safe_path::resolve` for containment. `resolve_user_create_path` below is the same
+    // flow with a `resolve_parent` fallback for targets that do not exist yet.
+
     fn resolve_user_path(
         &self,
         user: &AuthUser,
@@ -682,6 +735,13 @@ impl SftpSession {
         })
     }
 
+    // @tour comment Root entries are immutable
+    // A resolved path knows whether it *is* a root, and `mkdir`, `remove`, `rmdir` and both
+    // sides of `rename` all call this before doing anything.
+    //
+    // Without it, a client could `rmdir /Documents` and delete a configured common folder
+    // outright. The rejection is audited with an explicit reason.
+
     fn reject_root_write(resolved: &ResolvedPath) -> Result<(), StatusCode> {
         if matches!(resolved, ResolvedPath::Real { is_root: true, .. }) {
             Err(StatusCode::PermissionDenied)
@@ -689,6 +749,16 @@ impl SftpSession {
             Ok(())
         }
     }
+
+    // @tour comment Authorization is re-checked on every operation
+    // Nearly every protocol handler starts with this. For a real user it re-queries for a
+    // non-revoked key matching the session's fingerprint — so revoking a key in the web UI
+    // kills sessions that are already open. It also re-runs the OIDC refresh on an interval
+    // and drops the session if the user loses all access.
+    //
+    // For a temporary guest it re-checks revocation and expiry on both the key and the
+    // guest account. A time-limited SFTP drop point therefore really does stop working at
+    // its expiry, mid-session.
 
     async fn ensure_active(&mut self) -> Result<(), StatusCode> {
         match &mut self.principal {
@@ -992,6 +1062,15 @@ impl russh_sftp::server::Handler for SftpSession {
         }
     }
 
+    // @tour sftp-server:100 opendir and the virtual root
+    // After the liveness check and a handle-count limit, this delegates to
+    // `open_dir_handle`. For the [virtual root](glossary:virtual-root) it materializes a
+    // synthetic listing of every root this principal can see; a real path becomes a
+    // `tokio::fs::ReadDir`.
+    //
+    // `readdir` below removes the handle from the map, drains a bounded page, reinserts it,
+    // and signals EOF when a page comes back empty.
+
     async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
         self.ensure_active().await?;
         if self.handles.len() >= MAX_SFTP_OPEN_HANDLES {
@@ -1047,6 +1126,16 @@ impl russh_sftp::server::Handler for SftpSession {
             Ok(Name { id, files: out })
         }
     }
+
+    // @tour sftp-server:120 open, read, and write
+    // `open` derives whether the client wants write access from the open flags, picks the
+    // matching required capability, and re-checks it against the resolved path before
+    // building `OpenOptions`.
+    //
+    // Notably it then *drops* the opened file and stores only the root key, path and write
+    // flag — `read` and `write` each reopen and seek per request. That keeps handle state
+    // cheap, at the cost of reopening the file by path on every packet, and it means both
+    // re-verify permissions on every single operation.
 
     async fn open(
         &mut self,
@@ -1359,6 +1448,15 @@ impl russh_sftp::server::Handler for SftpSession {
         Ok(Self::ok(id))
     }
 
+    // @tour comment Rename resolves two paths with two different resolvers
+    // The source goes through the resolver that requires existence, the destination through
+    // the one that does not, both demanding write capability. Both must be real paths,
+    // neither may be a root, and write must be permitted on both sides.
+    //
+    // Because capability is per-root, a cross-root rename is only allowed when the
+    // principal can write to both. But the operation itself is a raw `fs::rename`, so a
+    // cross-filesystem move fails at the OS level and surfaces as a generic failure.
+
     async fn rename(
         &mut self,
         id: u32,
@@ -1433,6 +1531,15 @@ impl russh_sftp::server::Handler for SftpSession {
         Ok(Self::ok(id))
     }
 }
+
+// @tour sftp-server:60 Fingerprint to principal
+// The literal username `guest` selects the temp-user branch, joining the guest key and
+// guest tables with revocation and expiry filters, producing a principal pinned to exactly
+// one root, one relative path, and one write flag.
+//
+// Any other username joins `user_public_keys` to `users` on both fingerprint *and*
+// username. When OIDC is configured this also re-fetches userinfo and recomputes
+// permissions, so a user who has lost all access resolves to `None` and cannot log in.
 
 async fn resolve_principal(
     state: &AppState,
@@ -1753,6 +1860,15 @@ async fn fetch_userinfo(
 
     response.json::<serde_json::Value>().await.ok()
 }
+
+// @tour sftp-server:30 Persistent host identity
+// On first boot this generates an Ed25519 key and writes it atomically: the temp file is
+// created with mode `0o600` *before* any key bytes are written, permissions are re-asserted
+// afterwards, and only then is it renamed into place.
+//
+// That ordering is deliberate — a chmod-after-write would leave a window in which the host
+// private key is world-readable. On later boots the same key is reused, so clients'
+// `known_hosts` entries stay valid.
 
 fn load_or_create_host_key(path: &Path) -> anyhow::Result<russh::keys::PrivateKey> {
     if path.exists() {

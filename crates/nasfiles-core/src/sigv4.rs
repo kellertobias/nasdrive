@@ -28,6 +28,15 @@ fn percent_encode_byte(b: u8) -> String {
     format!("%{:02X}", b)
 }
 
+// @tour comment The path is encoded but never normalized
+// Both verifiers encode the request path without encoding slashes. AWS specifies that S3,
+// unlike other services, does not double-encode the path — which this matches — but it also
+// means no `.` or `..` segment normalization happens before signing.
+//
+// The unreserved set is exactly the RFC 3986 one and the encoder is byte-wise, so
+// multi-byte UTF-8 keys become several escape groups. Correct, but worth knowing when
+// comparing against a hand-computed signature.
+
 /// SigV4 URI encoding: encode everything except unreserved chars.
 /// Unreserved: A-Z a-z 0-9 - _ . ~
 /// Used for path segments (does NOT encode `/`) and for query key/value (DOES encode everything).
@@ -139,6 +148,15 @@ pub struct SigV4RequestContext<'a> {
     pub service: &'a str,
     pub signature: &'a str,
 }
+
+// @tour s3-api:60 The canonical request and a constant-time compare
+// The pure-crypto half, with no axum or database types in sight. It URI-encodes the path
+// without encoding slashes, canonicalizes the query, builds the six-line canonical request,
+// then assembles the string-to-sign and derives the signing key through four chained HMACs.
+//
+// The final comparison goes through a constant-time fold rather than `==`.
+// `verify_presigned` below is the same shape but hardcodes an unsigned payload and `host`
+// as the sole signed header.
 
 /// Verify an AWS SigV4 Authorization-header signature.
 ///

@@ -70,6 +70,15 @@ async fn main() -> anyhow::Result<()> {
 
     // Store sessions in the same persistent database so logins survive restarts.
     let session_store = auth::session::PersistentSessionStore::connect(&config.db_url).await?;
+    // @tour authentication:50 Where sessions are attached
+    // Before any handler runs, `tower_sessions` attaches a session to the request. The
+    // cookie name comes from `auth::session::cookie_name()`, `Secure` is decided by
+    // `auth::session::is_secure(&config)`, `SameSite` is `Lax`, and expiry is
+    // `Expiry::OnInactivity` of 24 hours.
+    //
+    // This is the layer that makes `tower_sessions::Session` injectable into `login`,
+    // `login_totp` and `require_auth` later in the tour.
+
     let session_layer = SessionManagerLayer::new(session_store)
         .with_name(auth::session::cookie_name())
         .with_secure(auth::session::is_secure(&config))
@@ -93,6 +102,14 @@ async fn main() -> anyhow::Result<()> {
     if matches!(state.config.auth_mode, config::AuthMode::Sso) {
         auth::share_audit::spawn_daily_share_audit(state.clone());
     }
+
+    // @tour sftp-server:10 The SFTP server is opt-in
+    // The listener starts from `main` only when SFTP is enabled in config, right after
+    // `AppState::new` and the share-audit background tasks.
+    //
+    // Because it is handed the same `AppState`, the SFTP server shares the identical
+    // `AppConfig` and `sqlx` pool as the HTTP API — the same users, the same roots, the
+    // same permissions.
 
     if state.config.sftp_enabled {
         sftp::server::spawn(state.clone()).await?;
@@ -367,6 +384,14 @@ async fn main() -> anyhow::Result<()> {
     let health = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/api/auth/config", get(auth::local::auth_config));
+
+    // @tour s3-api:10 Mounted outside the session stack
+    // The S3 surface is built as a standalone router and nested at `/s3`. Unlike the main
+    // API routes it never receives the session or CSRF middleware — every S3 request
+    // authenticates itself from scratch through [SigV4](glossary:sigv4).
+    //
+    // The lines just below also spawn an hourly cleanup loop for abandoned multipart
+    // uploads, which is the only garbage collector for stale staging directories.
 
     // S3-compatible API — no session or CSRF middleware, uses SigV4
     let s3_router = api::s3::router();

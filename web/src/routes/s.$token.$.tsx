@@ -51,6 +51,15 @@ function zipDownloadKey(path: string) {
   return `zip:${path}`;
 }
 
+// @tour share-management:90 A visitor opens the link
+// The route pulls `token` from params and the in-share subdirectory from `params._splat`,
+// and a `phase` state machine walks `loading → password | browsing | error`.
+//
+// The mount effect calls `api.shareMetadata(token)`; if a password is required it switches
+// phase, otherwise it immediately calls `api.shareAuth(token)` and stores `resp.bearer`. A
+// later effect deliberately skips listing when `allow_download` is false, mirroring the
+// server-side gate.
+
 function ShareViewer() {
   const { token } = useParams({ from: "/s/$token/$" });
   const params = Route.useParams();

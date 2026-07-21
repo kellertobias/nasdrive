@@ -291,6 +291,16 @@ pub async fn auth_config(State(state): State<AppState>) -> impl IntoResponse {
     }))
 }
 
+// @tour authentication:70 Password login: rate limit, then verify
+// The handler runs `require_local_mode` and `require_local_auth_header`, normalizes the
+// username, resolves the client IP via `crate::auth::client_ip`, then applies both
+// rate-limit checks before loading the user and calling `verify_password`.
+//
+// Crucially, unknown user, missing hash, and wrong password all return the same `401
+// "invalid username or password"` while `record_attempt` stores distinct internal reasons
+// (`unknown_user`, `no_password`, `bad_password`). The distinction stays in the audit table
+// and never reaches the caller.
+
 pub async fn login(
     State(state): State<AppState>,
     session: tower_sessions::Session,
@@ -428,6 +438,16 @@ pub async fn login(
     .await;
     Ok(Json(json!({"ok": true, "requires_totp": false})))
 }
+
+// @tour authentication:90 The second factor
+// When the password check passes but the user has TOTP, `login` either accepts a
+// trusted-device proof and finishes immediately, or issues a `TotpChallengeSession` holding
+// `user_id`, a random `challenge_id`, a 5-minute expiry and an `attempts` counter.
+//
+// This handler reloads that challenge, requires the `challenge_id` to match and not be
+// expired, and calls `verify_user_totp`. Failures increment `attempts` and the challenge is
+// destroyed at 5 — so the second factor gets its own brute-force budget, separate from the
+// password rate limiter.
 
 pub async fn login_totp(
     State(state): State<AppState>,
@@ -1008,6 +1028,16 @@ pub async fn admin_revoke_trusted_device(
     Ok(Json(json!({"ok": true})))
 }
 
+// @tour authentication:120 Re-validating on every request
+// Rather than trusting the `AuthUser` serialized into the session, this reloads the row
+// from the database on each request. A deleted user gets the session dropped and a 401.
+//
+// If `row.password_changed_at` is newer than the session's `local_auth_at`, the session is
+// deleted with `"session expired"` — that single comparison is the entire "log out all
+// other devices on password change" feature. The freshly loaded user is then written back,
+// so permission changes apply on the very next request. See
+// [session revalidation](glossary:session-revalidation).
+
 pub async fn current_session_user(
     state: &AppState,
     session: &tower_sessions::Session,
@@ -1059,6 +1089,14 @@ fn require_admin_local(state: &AppState, user: &AuthUser) -> Result<(), Response
     }
 }
 
+// @tour comment CSRF is enforced in two independent places
+// The `/auth/local/*` routes are registered *outside* the `require_auth` layer, so they
+// never see the middleware's CSRF check. Each of `login`, `login_totp`,
+// `start_passkey_authentication` and `finish_passkey_authentication` must therefore call
+// this itself, and `api::me::logout` duplicates the check inline for the same reason.
+//
+// Adding a new unauthenticated auth route without this call silently opens a CSRF hole.
+
 fn require_local_auth_header(headers: &HeaderMap) -> Result<(), Response> {
     if headers
         .get("X-NasFiles-Request")
@@ -1079,6 +1117,15 @@ fn webauthn(state: &AppState) -> Result<&Webauthn, Response> {
         .as_deref()
         .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "passkeys are unavailable"))
 }
+
+// @tour authentication:110 Establishing the session
+// Every successful path — password-only, TOTP, trusted device, passkey — converges here. It
+// calls `ensure_home_folder`, then `session.cycle_id()` to rotate the session ID and defeat
+// [session fixation](glossary:session-fixation), then writes `LOCAL_AUTH_AT_SESSION` and
+// `SESSION_USER` into the session and stamps `users.last_login_at`.
+//
+// That `local_auth_at` timestamp is not bookkeeping: the next step uses it to invalidate
+// sessions after a password change.
 
 async fn finish_login(
     state: &AppState,
@@ -1315,6 +1362,17 @@ fn matched_totp_step_at(totp: &TOTP, code: &str, now_secs: i64) -> Option<i64> {
     }
 }
 
+// @tour authentication:100 Verification and the replay guard
+// The stored `secret_enc` is decrypted, a `TOTP` is rebuilt by `build_totp`
+// (SHA1, 6 digits, skew 1, 30s), and `matched_totp_step` returns the exact counter the
+// submitted code corresponds to.
+//
+// The [replay guard](glossary:totp-replay-guard) is the conditional `UPDATE local_totp SET
+// last_used_step = $1 ... AND (last_used_step IS NULL OR last_used_step < $1)`: if
+// `rows_affected()` is zero the code was already spent. Recording the *matched* counter
+// rather than the wall-clock one is what makes a code single-use across the whole skew
+// window.
+
 async fn verify_user_totp(state: &AppState, user_id: &str, code: &str) -> Result<bool, Response> {
     let row = sqlx::query("SELECT u.username, t.secret_enc FROM local_totp t JOIN users u ON u.id = t.user_id WHERE t.user_id = $1")
         .bind(user_id)
@@ -1395,6 +1453,15 @@ async fn create_trusted_device(
         "expires_at": expires_at,
     }))
 }
+
+// @tour comment Trusted devices are strong server-side, weak client-side
+// The stored hash is compared with `ct_eq` (constant time), the code goes through the same
+// matched-counter replay guard as a normal TOTP, and `expires_at` is honoured. The hash is
+// an HMAC-SHA256 over a domain separator plus user id, device id and setup code, keyed by
+// `session_secret` — so rotating that secret invalidates every trusted device at once.
+//
+// The residual risk is entirely client-side: `web/src/lib/totp.ts` keeps the raw base32
+// secret in `localStorage`, so any XSS on the origin yields a lasting second-factor bypass.
 
 async fn verify_trusted_device(
     state: &AppState,
@@ -1747,6 +1814,15 @@ const LOGIN_RATE_LIMIT_PER_USERNAME: i64 = 10;
 const LOGIN_RATE_LIMIT_PER_IP: i64 = 30;
 /// Rolling window for login rate limiting, in milliseconds.
 const LOGIN_RATE_LIMIT_WINDOW_MS: i64 = 5 * 60 * 1000;
+
+// @tour authentication:80 What the rate limiter counts
+// Two independent counters over `local_auth_attempts` within a 5-minute window: 10 failures
+// for one normalized username, and 30 failures from one IP across all usernames. The per-IP
+// limit is the anti-password-spraying control, deliberately looser so a NAT'd office is not
+// locked out by two forgetful users.
+//
+// `is_login_rate_limited_by_ip` returns `false` outright when no IP can be determined —
+// which ties it directly to the trusted-proxy configuration called out in `auth/mod.rs`.
 
 async fn is_login_rate_limited(pool: &AnyPool, normalized: &str) -> bool {
     let since = now_ms() - LOGIN_RATE_LIMIT_WINDOW_MS;

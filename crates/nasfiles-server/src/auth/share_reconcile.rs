@@ -3,6 +3,16 @@ use std::collections::HashMap;
 use nasfiles_core::models::FolderCaps;
 use sqlx::AnyPool;
 
+// @tour comment Automatic revocation is reversible; manual is not
+// The restore path only clears `revoked_at` where `revoke_reason` is one of the automatic
+// values and the original expiry is still in the future — so a manually revoked share stays
+// dead forever.
+//
+// The second half treats a successful login as authoritative and revokes active shares for
+// any root absent from the permission snapshot. The nightly audit drives the same path, but
+// only after `permission_grace::confirm_permission_loss` agrees, and it deliberately skips
+// revocation on network errors.
+
 /// Apply an authoritative, user-level permission snapshot to the user's shares.
 ///
 /// Only shares that were automatically revoked for permission loss are restored;

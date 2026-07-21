@@ -4,6 +4,15 @@ use aes_gcm::{
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
 
+// @tour comment Two encrypt_secret functions with inverted arguments
+// This one takes the key *first* and a `&str`. The private `local::encrypt_secret` takes
+// the key *second* and raw bytes. Both produce base64url(nonce‖ciphertext) with AES-256-GCM
+// keyed on `session_secret[..32]`, so ciphertexts are interchangeable but the call
+// signatures are mirror images.
+//
+// Both also index `session_secret[..32]` directly, so a shorter secret panics in `local.rs`
+// rather than returning the friendly error this module produces.
+
 /// Encrypt a short plaintext (e.g., an S3 secret key) using AES-256-GCM.
 /// The encryption key is derived from the first 32 bytes of `session_secret`.
 /// Returns base64url(nonce[12] || ciphertext).

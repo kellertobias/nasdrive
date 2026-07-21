@@ -1,0 +1,79 @@
+name: Publish code safari
+
+# Builds the guided code tours in `.tour/` into a static site and publishes it
+# to GitHub Pages.
+#
+# NOTE: Forgejo Actions also picks up `.github/workflows/`, but this repository
+# only mirrors *to* GitHub and there is no Pages equivalent on the Forgejo side.
+# Every job below is therefore gated on `github.server_url`, which is
+# `https://github.com` only on GitHub — on Forgejo it is the instance URL, so
+# the jobs are skipped there rather than failing on missing Pages actions.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".tour/**"
+      - ".codesafariignore"
+      - "crates/**"
+      - "web/src/**"
+      - ".github/workflows/code-safari.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two Pages deployments race; queue instead, but don't cancel a
+# deployment that is already mid-flight.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CODESAFARI_VERSION: "^1"
+
+jobs:
+  build:
+    name: Build tour site
+    runs-on: ubuntu-latest
+    if: github.server_url == 'https://github.com'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate tour content
+        run: npx --yes "@tobisk/codesafari@${CODESAFARI_VERSION}" validate .
+
+      - name: Export static site
+        run: npx --yes "@tobisk/codesafari@${CODESAFARI_VERSION}" export . --out codesafari-site
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: codesafari-site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.server_url == 'https://github.com'
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

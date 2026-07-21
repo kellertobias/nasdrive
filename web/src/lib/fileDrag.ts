@@ -141,6 +141,16 @@ function buildDragPreview(
   return element;
 }
 
+// @tour file-transfers:10 Encoding the drag payload
+// A drag begins in `FileGrid`/`FileList`, which decide *what* is in flight: if the dragged
+// path is already selected the whole selection travels, otherwise the selection collapses
+// to that one entry. The `{root, paths}` result lands here.
+//
+// The payload is stringified once and written under both a private MIME type and
+// `text/plain`, with `effectAllowed = "copyMove"` so the browser offers both cursors. The
+// mirror function `getFileDragPayload` re-parses and type-checks every field before
+// trusting it.
+
 export function setFileDragPayload(
   dataTransfer: DataTransfer,
   payload: FileDragPayload,

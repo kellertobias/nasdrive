@@ -152,6 +152,15 @@ function notifyDownloadComplete(
   });
 }
 
+// @tour authentication:30 The single HTTP chokepoint
+// Every request in the app funnels through here, and three details matter for auth. It sets
+// the [`X-NasFiles-Request` header](glossary:csrf-header) on every state-changing method
+// unless `skipCsrf` is passed; it sends `credentials: "same-origin"` so the `nasfiles.sid`
+// cookie rides along; and it converts a `401` into a bare `ApiError` without reading the
+// body.
+//
+// That header is not decoration — the server rejects state-changing requests that lack it.
+
 async function apiFetch<T>(
   path: string,
   options: FetchOptions = {},
@@ -613,6 +622,14 @@ export const api = {
 
   logout: () => apiFetch<void>("/auth/logout", { method: "POST" }),
 
+  // @tour authentication:40 The login call itself
+  // A thin wrapper POSTing `{username, password, trusted_device}` to `/auth/local/login`.
+  // Its siblings `localLoginTotp`, `startPasskeyLogin` and `finishPasskeyLogin` cover the
+  // other legs of the flow.
+  //
+  // Note that `me` further up deliberately swallows a 401 and returns `null`, so an
+  // unauthenticated visitor renders the login page instead of an error screen.
+
   localLogin: (body: {
     username: string;
     password: string;
@@ -738,6 +755,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ paths, dest }),
     }),
+
+  // @tour file-transfers:40 The API client method
+  // POSTs to `/api/files/{root}/transfer` with `{paths, dest_root, dest, operation}`. The
+  // source root travels in the URL while the destination root travels in the body — that
+  // asymmetry is what makes cross-root transfers expressible on a per-root route.
+  //
+  // The declared `job_id` in the response is not used by the caller: progress is discovered
+  // by listing all jobs rather than tracking this one. Contrast `moveEntries` just above,
+  // which is the older synchronous endpoint.
 
   transferEntries: (
     root: string,
@@ -916,6 +942,14 @@ export const api = {
   },
 
   // ---- Share management ----
+
+  // @tour share-management:30 The typed API surface
+  // `createShare` spreads `opts` into a body alongside `root_key` and `path` and POSTs to
+  // `/api/shares`, declaring the response as `{ id, token, url, created_at, expires_at }`.
+  // `listShares`, `getShare` and `revokeShare` complete the owner-side CRUD.
+  //
+  // Note that the client sends `allow_upload`/`allow_download` here, and the server ignores
+  // them entirely — the callout in `shares/create.rs` explains why.
 
   createShare: (
     root: string,

@@ -11,6 +11,15 @@ use crate::state::AppState;
 const BUILD_COMMIT: &str = env!("NASFILES_BUILD_COMMIT");
 const BUILD_DATE: &str = env!("NASFILES_BUILD_DATE");
 
+// @tour authentication:140 The handler finally sees the user
+// `CurrentUser(user)` is the payoff of the extensions insert in the previous step — its
+// `FromRequestParts` impl just clones the `AuthUser` back out, returning 401 if it is
+// absent.
+//
+// `me` computes `visible_roots(&state.config, &user)` and returns identity, roots, auth
+// feature flags, capabilities and build info. This is exactly the payload `RootLayout`
+// queries under the `["me"]` key — closing the loop with step 1's `invalidateQueries`.
+
 /// GET /api/me — return current authenticated user info.
 pub async fn me(
     State(state): State<AppState>,

@@ -1,0 +1,13 @@
+# Keep the code safari focused on hand-written source.
+# Same syntax as .gitignore; applied on top of it.
+
+# Generated / lockfiles
+Cargo.lock
+web/package-lock.json
+web/src/routeTree.gen.ts
+
+# Binary assets — nothing to read, and they bloat the export
+docs/assets/
+web/public/
+demo/
+fuzz/corpus/

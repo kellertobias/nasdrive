@@ -193,6 +193,15 @@ pub async fn upload_part_inner(
 
 // ---- CompleteMultipartUpload ----
 
+// @tour s3-api:130 Multipart, ETag, and XML
+// Creating an upload inserts a row and a staging directory; each part is written with the
+// same streaming, hashing and size logic as PutObject. Completion re-checks ownership,
+// sorts the staged parts lexically, concatenates them into a temp file, renames it into the
+// safe path, and cleans up.
+//
+// The response ETag comes from `etag::compute_etag`, and the body is built by a hand-rolled
+// `format!` in `xml.rs` rather than a serializer — as is every response in this module.
+
 pub async fn complete_multipart_upload_inner(
     state: &AppState,
     principal: &S3Principal,

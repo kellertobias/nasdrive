@@ -152,6 +152,34 @@ NASDrive server
    `-- configured host folders
 ```
 
+### Code Safaris — guided tours of the source
+
+Want the longer version? **[Take a code safari →](https://kellertobias.github.io/tobisk-nasfiles/)**
+
+Code safaris are guided walkthroughs that follow real control flow through the
+codebase, in a read-only IDE-style viewer — file tree on the left, the actual
+source in the middle, the narrative on the right. There are five:
+
+| Tour | What it follows |
+| --- | --- |
+| **Authentication** | A login from the browser form through rate limiting, TOTP, and session creation — then how every later request re-validates the user against the database. |
+| **Share management** | The life of a share link: creation, token generation, a stranger redeeming it, and the two very different ways a share dies. |
+| **File copy & move** | A drag-and-drop turned into a durable, resumable, cancellable background job, with progress derived rather than counted. |
+| **SFTP server** | Host keys, public-key-only auth, the synthetic virtual root, and per-operation permission revalidation. |
+| **S3-compatible API** | SigV4 verification, bucket-to-root mapping, ListObjectsV2, PutObject, and multipart uploads. |
+
+The narrative lives in [`.tour/`](.tour/index.md) plus `@tour` comments in the
+source itself, so it moves with the code. To read it locally:
+
+```bash
+npx @tobisk/codesafari dev      # http://localhost:4317
+npx @tobisk/codesafari validate # check the tours still resolve
+```
+
+The published site is rebuilt by
+[`.github/workflows/code-safari.yml`](.github/workflows/code-safari.yml) on every
+push to `main`.
+
 ## Deployment Notes
 
 - Put NASDrive behind HTTPS for real deployments. The compose examples use Traefik labels for this.

@@ -6,6 +6,14 @@ use super::model::{CreateShareRequest, Share, ShareType, TargetKind};
 use crate::config::AppConfig;
 use crate::fs::roots;
 
+// @tour share-management:60 Validation and permission derivation
+// Before anything is written, `roots::resolve_root(..., RequiredCap::Share)` proves the
+// caller may share that root and `safe_path::resolve` proves the path is inside it.
+//
+// `permissions_for_share_type` is the real source of the permission pair. Upload and
+// gallery shares are rejected unless the target is a directory, and guest shares require a
+// password of at least 4 characters, hashed with Argon2id.
+
 /// Create a new share for a file or directory.
 ///
 /// Validates that the user has access to the target path, generates a cryptographic
@@ -28,6 +36,16 @@ pub async fn create_share(
         .map_err(|e| ShareCreateError::InvalidPath(e.to_string()))?;
 
     let is_directory = resolved.is_dir();
+    // @tour comment The client's permission flags are decorative
+    // `ShareDialog` computes and sends `allow_download`/`allow_upload`, and
+    // `api.createShare` types them as required fields — but `CreateShareRequest` has no
+    // such fields, so they are dropped and permissions are derived purely from
+    // [`share_type`](glossary:share-type).
+    //
+    // That is the safe direction: a client cannot escalate a Dropbox share into a
+    // downloadable one. The dead fields just invite the opposite assumption when reading
+    // the frontend.
+
     let (allow_download, allow_upload) = permissions_for_share_type(&request.share_type);
 
     // For upload shares, target must be a directory
@@ -81,6 +99,16 @@ pub async fn create_share(
             is_directory, target_kind, target_user_id, password_hash,
             allow_upload, allow_download, share_type, expires_at, created_at, revoked_at,
             display_token)
+           // @tour comment Raw tokens ARE stored, in display_token
+           // `tokens::hash_token`'s doc comment promises the raw token is never stored, and
+           // the `token_hash` column honours that — but the last bound parameter writes
+           // `raw_token` straight into `display_token`, which `list_shares` reads back to
+           // rebuild the link.
+           //
+           // So the hashing buys nothing against a database read; it only prevents a
+           // lookup-by-plaintext query pattern. Worth knowing before assuming a database
+           // compromise leaves share tokens safe.
+
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL, $16)"#,
     )
     .bind(&id)

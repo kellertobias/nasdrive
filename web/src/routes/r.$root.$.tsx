@@ -544,6 +544,15 @@ function FileBrowser() {
     }
   };
 
+  // @tour file-transfers:30 Copy or move is a UI decision
+  // Before this runs, `handleFileDrop` refuses a folder dropped into itself, then branches:
+  // a same-root drop is unambiguously a move and calls straight through, while a cross-root
+  // drop stores a `pendingTransfer` and renders a modal whose Copy and Move buttons each
+  // call here.
+  //
+  // `executeTransfer` itself is deliberately thin, and notably invalidates *no* query cache
+  // — the request only creates a job, so there is nothing to re-read yet.
+
   const executeTransfer = useCallback(
     async (
       sourceRoot: string,
@@ -561,6 +570,15 @@ function FileBrowser() {
     },
     [showErrorDialog],
   );
+
+  // @tour file-transfers:20 The drop handler
+  // The single funnel for every drop target in the route — the list, the grid, the column
+  // browser and the tree all pass it as `onDropFiles`.
+  //
+  // It resets the drop highlight, does a client-side permission pre-check against
+  // `user?.roots` and bails with a toast when the target root is not writable, and branches
+  // external OS files off to the upload path first. Only in-app drags reach the transfer
+  // logic.
 
   const handleFileDrop = useCallback(
     (targetRoot: string, targetPath: string, e: React.DragEvent) => {

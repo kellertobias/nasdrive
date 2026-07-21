@@ -95,6 +95,15 @@ impl FromRequestParts<AppState> for S3Auth {
     }
 }
 
+// @tour s3-api:40 The auth extractor
+// `S3Auth` implements `FromRequestParts`, so axum runs this before any handler body and
+// converts a failure into a proper XML error response.
+//
+// It prefers the `authorization` header and falls back to presigned-URL mode only if the
+// raw query contains a signature parameter. The result is one of two variants — a user
+// token or a share-scoped credential — and the entire rest of the API is written against
+// that enum. See [S3 principal](glossary:s3-principal).
+
 async fn resolve_s3_auth(parts: &mut Parts, state: &AppState) -> Result<S3Principal, S3AuthError> {
     // Try header-based auth first, then presigned URL
     if let Some(auth_header) = parts
@@ -113,6 +122,16 @@ async fn resolve_s3_auth(parts: &mut Parts, state: &AppState) -> Result<S3Princi
 
     Err(S3AuthError::MissingCredentials)
 }
+
+// @tour s3-api:50 Reconstructing what the client signed
+// Parsing the authorization header yields the access key, scope date, region, service,
+// signed-header list and signature. The server then re-reads each named header off the live
+// request, sorts them, and enforces a 900-second clock-skew window *before* doing any
+// crypto.
+//
+// The payload hash is taken verbatim from `x-amz-content-sha256`, defaulting to
+// `UNSIGNED-PAYLOAD` when absent. Everything is bundled into a request context and handed
+// to the framework-free verifier in `nasfiles-core`.
 
 async fn verify_header_auth(
     parts: &mut Parts,
@@ -177,6 +196,14 @@ async fn verify_header_auth(
     Ok(principal)
 }
 
+// @tour s3-api:70 Presigned URLs: expiry instead of skew
+// The access key and region are pulled out of the credential parameter by splitting on `/`,
+// and the scope date is the first eight characters of the date parameter.
+//
+// Instead of a skew window this path checks the issue time plus an expiry defaulting to 900
+// seconds. The query is rebuilt without the signature parameter before canonicalization,
+// since a signature cannot sign itself.
+
 async fn verify_presigned_auth(
     parts: &mut Parts,
     state: &AppState,
@@ -236,6 +263,16 @@ async fn verify_presigned_auth(
     update_last_used(&state.pool, &access_key).await;
     Ok(principal)
 }
+
+// @tour s3-api:80 Two credential tables, one access-key namespace
+// The access key is looked up first among user API tokens and then among share credentials.
+// Either way the stored secret is encrypted at rest and decrypted with the configured
+// session secret.
+//
+// User tokens honour revocation and an optional expiry; share credentials have a mandatory
+// expiry and additionally re-check the parent share's own revocation state. For user tokens
+// `load_user` reloads the live user row, so permissions can never go stale relative to a
+// long-lived token.
 
 /// Look up a credential by access_key and return (secret_key, principal).
 pub async fn lookup_credential(
@@ -382,6 +419,15 @@ async fn update_last_used(pool: &AnyPool, access_key: &str) {
         .execute(pool)
         .await;
 }
+
+// @tour comment Presigned query parsing does not decode
+// This splits on `&` and `=` and keeps raw, still-percent-encoded values. That is harmless
+// for the signature (hex) and the date, but most SDKs URL-encode the credential parameter,
+// writing `/` as `%2F`.
+//
+// The extractors above split on a literal `/`, so an encoded credential will not decompose
+// into its scope components. Anyone extending presigned support should test against a
+// client that encodes it.
 
 fn parse_query_params(query: &str) -> HashMap<String, String> {
     query

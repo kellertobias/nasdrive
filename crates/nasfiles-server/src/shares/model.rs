@@ -135,6 +135,16 @@ impl TargetKind {
     }
 }
 
+// @tour share-management:50 The request contract
+// The deserialization boundary: `root_key`, `path`, `target_kind`, an optional
+// `target_user_id` and `password`, a `share_type` defaulting to `Typical`, and `expires_in`
+// in seconds where `None` means never.
+//
+// Above it sit `ShareType` and `TargetKind`, both with `as_str`/`from_str` round-trips used
+// for the TEXT columns. Notice what is *absent*: there are no
+// `allow_download`/`allow_upload` fields, so serde silently drops the ones the client
+// sends.
+
 /// Request body for creating a share.
 #[derive(Debug, Deserialize)]
 pub struct CreateShareRequest {

@@ -9,6 +9,15 @@ pub fn issue_bearer(session_secret: &[u8], share_id: &str) -> Result<String, Bea
         .map_err(|e| BearerError::Issue(e.to_string()))
 }
 
+// @tour comment Bearer verification does not check revocation
+// The doc comment is explicit: this validates signature, expiry and share-id match, but not
+// revocation — the caller must check that separately against the database.
+//
+// Every public handler satisfies that by calling `access::resolve_share` *before* verifying
+// the bearer, so a revoked share fails at token resolution. A new endpoint that verified a
+// bearer without first re-resolving the share would honour it for up to 30 minutes past
+// revocation.
+
 /// Verify a bearer token and ensure it belongs to the expected share.
 ///
 /// Checks: HMAC signature, expiry, share_id match.

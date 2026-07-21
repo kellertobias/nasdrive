@@ -19,6 +19,15 @@ use crate::state::AppState;
 
 use auth::{S3Auth, S3AuthError, S3Principal};
 
+// @tour s3-api:20 Six routes for a whole protocol
+// There are only six paths: the service root for listing buckets, the bucket path with and
+// without a trailing slash, and one wildcard object path per verb.
+//
+// Real S3 overloads a handful of URLs with dozens of operations via query strings, so the
+// handlers dispatch themselves rather than the router declaring more routes. The duplicated
+// bucket path is not an accident — axum treats the trailing slash as distinct, and S3
+// clients send both.
+
 /// Build the S3-compatible API router, mounted at `/s3` in main.rs.
 /// No session or CSRF middleware — SigV4 is the only auth.
 pub fn router() -> Router<AppState> {
@@ -55,6 +64,14 @@ async fn handle_bucket_get(
 
     object::list_objects_inner(&state, &principal, &bucket, prefix, delimiter, max_keys).await
 }
+
+// @tour s3-api:30 One URL, many operations
+// `handle_get` checks for an `uploadId` query parameter and becomes ListParts, otherwise it
+// falls through to GetObject. `handle_put` splits into UploadPart or PutObject the same
+// way, and `handle_post` branches on a bare `uploads` flag versus an `uploadId`.
+//
+// Every one of these takes `S3Auth(principal)` as an argument — that extractor is what runs
+// authentication before any handler body executes.
 
 /// GET /{bucket}/{key} — GetObject OR ListParts if ?uploadId= present
 async fn handle_get(
@@ -140,6 +157,16 @@ async fn handle_delete(
     }
     object::delete_object_inner(&state, &principal, &bucket, &key).await
 }
+
+// @tour s3-api:100 Bucket names are roots, not containers
+// The single translation from an S3 bucket name to a filesystem base path, called at the
+// top of every object handler. For a user token the bucket name *is* a root key, passed
+// straight to `roots::resolve_root`; any failure collapses to `NoSuchBucket` so the API
+// never leaks which roots exist.
+//
+// For a share credential the only legal bucket is the literal name `share`, gated by that
+// share's own permissions. `list_buckets` is the mirror image: visible roots become the
+// bucket listing.
 
 /// Resolve a bucket name to a filesystem base path, enforcing permissions.
 pub async fn resolve_bucket_path(

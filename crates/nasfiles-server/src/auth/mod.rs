@@ -9,6 +9,16 @@ pub mod share_reconcile;
 
 use axum::http::HeaderMap;
 
+// @tour comment The rate limiter's input is attacker-influenced
+// `X-Forwarded-For` is client-appendable, so this takes the entry at `len -
+// trusted_proxy_depth` rather than the leftmost one, and returns `None` entirely when the
+// depth is `0`.
+//
+// Both misconfigurations weaken login throttling: too low and an attacker's forged leading
+// entries count as distinct IPs; `0` behind a real proxy disables per-IP throttling
+// completely, since `is_login_rate_limited_by_ip` treats `None` as "not limited". The unit
+// tests below encode the intended semantics.
+
 /// Extract the real client IP from proxy headers, honoring the configured
 /// trusted-proxy depth.
 ///

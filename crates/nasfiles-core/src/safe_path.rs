@@ -19,6 +19,17 @@ pub enum SafePathError {
     Io(#[from] std::io::Error),
 }
 
+// @tour comment The single path-containment chokepoint
+// Every path in NASDrive — HTTP, SFTP and S3 alike — reaches the filesystem through this
+// function or its sibling below. It rejects NUL bytes, leading separators and Windows drive
+// prefixes, then canonicalizes *both* the root and the joined path and asserts the result
+// still starts with the root.
+//
+// Canonicalizing after the join is what defeats `../` sequences and symlinks in one move.
+// Note the ordering constraint across the codebase: `roots::resolve_root` enforces the
+// capability *first*, and only then is containment checked. Both gates must pass. See
+// [safe path](glossary:safe-path).
+
 /// Resolve a relative path within a root directory, ensuring the
 /// result is contained within the root. This is the **single chokepoint**
 /// for all filesystem access — no other module should perform path joins
@@ -78,6 +89,16 @@ pub fn resolve(root: &Path, relative: &str) -> Result<PathBuf, SafePathError> {
 
     Ok(canonical_joined)
 }
+
+// @tour comment Creating a file needs a different guarantee
+// A path about to be created cannot be canonicalized, so containment is asserted on the
+// canonical *parent* and the final component is validated separately by
+// `validate_filename`.
+//
+// The subtle part is the `symlink_metadata` check: a final component that already exists as
+// a symlink is rejected, including a dangling one, because a later create, rename or mkdir
+// would follow it straight out of the root. The in-code comment above it describes the
+// exact bypass being closed.
 
 /// Check if a path would be valid without requiring the target to exist.
 /// Used for create operations (mkdir, upload) where the target doesn't exist yet.

@@ -12,6 +12,14 @@ use crate::state::AppState;
 use crate::thumb::kind;
 use nasfiles_core::tokens;
 
+// @tour share-management:100 Unauthenticated metadata
+// This endpoint takes no auth and returns only what a stranger may see: display name,
+// whether it is a directory, `requires_password` derived as `password_hash.is_some()`
+// (never the hash itself), the owner's display name, the permission flags and the expiry.
+//
+// It routes through `access::resolve_share`, which hashes the raw token, looks it up by
+// `token_hash`, and rejects revoked and expired shares.
+
 /// GET /api/public/shares/:token — get share metadata (no auth required).
 pub async fn share_metadata(
     State(state): State<AppState>,
@@ -44,6 +52,15 @@ pub async fn share_metadata(
         Err(e) => e.into_response(),
     }
 }
+
+// @tour share-management:110 Redeeming: password, rate limit, bearer
+// The share is resolved, then the rate limiter is consulted *before* the password is
+// touched. `access::verify_password` runs Argon2id; success resets the limiter, failure
+// records it and writes an `auth_fail` audit row.
+//
+// On success `bearer::issue_bearer` mints an HMAC [bearer token](glossary:share-bearer)
+// over `{share_id}:{iat}:{exp}` with a 30-minute TTL, and an `open` event is logged. Every
+// later content endpoint re-resolves the share by token *and* verifies that bearer.
 
 /// POST /api/public/shares/:token/auth — authenticate for a share.
 /// For guest shares: verifies password → returns bearer.
@@ -145,6 +162,14 @@ pub async fn share_list(
     if let Err(e) = verify_request_bearer(&state, &headers, &share.id) {
         return e.into_response();
     }
+
+    // @tour comment Listing is gated on allow_download, not just the bearer
+    // A drop box withholds bytes, but a directory listing would still leak every filename,
+    // size and mtime in scope. The same gate is applied to `share_info`, `share_preview`
+    // and `share_preview_status`, with a unit test pinning it.
+    //
+    // `ShareViewer` mirrors this client-side so the drop-box UI does not fire a request
+    // that is guaranteed to fail.
 
     // A share with downloads disabled (e.g. an upload-only drop box) must not
     // expose its file tree: listing leaks every name/size/mtime in scope even

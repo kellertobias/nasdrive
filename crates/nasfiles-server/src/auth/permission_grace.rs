@@ -1,5 +1,15 @@
 use sqlx::AnyPool;
 
+// @tour comment Permission loss needs two consecutive sightings
+// During SSO group refresh, shares are not revoked the first time a capability disappears —
+// a single truncated or transient identity-provider response would otherwise destroy every
+// share on that root. The first sighting inserts a `permission_loss_grace` row and returns
+// `false`; the second returns `true` and clears it.
+//
+// Correspondingly, `refresh.rs` clears grace rows for roots that still grant `share` or
+// `read`, so a stale first observation cannot confirm an unrelated later loss. See
+// [permission grace](glossary:permission-grace).
+
 /// Call when a share owner appears to have lost `share`/`read` capability on
 /// a root. Returns `true` once the loss is confirmed and the caller should
 /// revoke; returns `false` the first time it's observed, so a single

@@ -33,6 +33,15 @@ impl FileJobStore {
         }
     }
 
+    // @tour file-transfers:60 Persisting the job
+    // One row in `file_operation_jobs` with `status = 'queued'` and all four progress
+    // counters zeroed. Both the path list and the whole `AuthUser` are serialized to JSON.
+    //
+    // Storing the full user rather than just the id is what lets a
+    // [recovered job](glossary:file-job) re-run ACL checks with the original caller's
+    // `folder_permissions`. `FileJob::from_row` falls back to a synthesized user for rows
+    // written before that column existed.
+
     pub async fn create_transfer_job(
         &self,
         user: &AuthUser,
@@ -388,6 +397,15 @@ impl FileJobStore {
         self.recompute_progress(&item.job_id).await
     }
 
+    // @tour file-transfers:110 Progress is derived, never incremented
+    // A single aggregate query over `file_operation_items` produces total bytes,
+    // transferred bytes, total entries and completed entries, which are written back onto
+    // the job row.
+    //
+    // Because it is derived state rather than a running counter, a crash mid-copy can never
+    // leave the numbers skewed. Both `mark_item_done` and `update_item_bytes` call it, so
+    // in practice it runs about once per megabyte per file.
+
     async fn recompute_progress(&self, job_id: &str) -> Result<(), FileOpError> {
         let row = sqlx::query(
             "SELECT COALESCE(SUM(size_bytes), 0) AS total_bytes, \
@@ -610,6 +628,16 @@ impl PlannedItemKind {
     }
 }
 
+// @tour comment One runner per job, enforced by a DashMap insert
+// The guard is the very first line: inserting into the `running` map returns `Some` if the
+// key was already present, in which case nothing is spawned. That is what stops a manual
+// resume or the startup recovery sweep from racing a job already in flight over the same
+// temp files.
+//
+// Cancellation crosses the task boundary through the database rather than a channel —
+// `cancel_for_user` sets a flag and `ensure_not_cancelled` polls it once per item and once
+// per megabyte.
+
 pub fn spawn_file_job(state: AppState, job_id: String) {
     if state.file_jobs.running.insert(job_id.clone(), ()).is_some() {
         return;
@@ -635,6 +663,15 @@ pub async fn spawn_recovered_jobs(state: AppState) -> Result<(), FileOpError> {
     }
     Ok(())
 }
+
+// @tour file-transfers:70 The worker loop
+// The state machine for every operation kind. It refuses to touch a job that is paused
+// awaiting confirmation, flips the status to `Running`, and then — only if the item count
+// is still zero — plans the job and inserts the items. That condition is what makes a
+// resumed job skip re-planning.
+//
+// It dispatches `Copy` and `Move` to the same `execute_copy_like_job` with `cleanup_source`
+// toggled. A cancellation error maps to `Canceled` rather than `Error`.
 
 async fn run_file_job(state: &AppState, job_id: &str) -> Result<(), FileOpError> {
     let Some(job) = state.file_jobs.get(job_id).await? else {
@@ -698,6 +735,15 @@ async fn plan_job(state: &AppState, job: &FileJob) -> Result<Vec<PlannedItem>, F
     }
 }
 
+// @tour file-transfers:80 Planning the item list
+// Planning resolves the destination with `RequiredCap::Write` and requires it to be a
+// directory. The required *source* capability is asymmetric: `Write` for a move, because
+// the source will be deleted, but only `Read` for a copy.
+//
+// A same-root move emits one item per top-level path; anything else walks the tree
+// iteratively and emits an item per directory and per file, with sizes from the metadata.
+// Destination paths are always stored root-relative.
+
 async fn plan_copy_move_job(
     state: &AppState,
     job: &FileJob,
@@ -717,6 +763,15 @@ async fn plan_copy_move_job(
     if !dest.is_dir() {
         return Err(FileOpError::NotDirectory);
     }
+
+    // @tour comment Cross-root moves are copy-then-delete
+    // `fs::rename` cannot cross filesystems, so the whole strategy hinges on this
+    // comparison. Same-root collapses each top-level entry to one item and a single rename,
+    // which is instant regardless of size.
+    //
+    // Cross-root degrades to a full recursive copy followed by `cleanup_move_sources`. This
+    // is also why progress can jump straight from 0 to 100 for a same-root move but eases
+    // upward for a cross-root one. See [atomic move](glossary:atomic-move).
 
     let same_root_atomic_move =
         job.operation == FileOperationKind::Move && job.source_root == job.dest_root;
@@ -928,6 +983,15 @@ async fn append_delete_items(
     Ok(())
 }
 
+// @tour file-transfers:90 Executing the plan
+// It fetches only items whose status is not `done`, ordered by ordinal — so a restart
+// naturally resumes where it stopped.
+//
+// Each iteration re-checks cancellation, then re-resolves *both* sides: the source through
+// `resolve_user_path` and the target through `resolve_user_create_path`, which uses
+// `safe_path::resolve_parent` because the target does not exist yet. Only after every item
+// succeeds does source cleanup run.
+
 async fn execute_copy_like_job(
     state: &AppState,
     job: &FileJob,
@@ -1015,6 +1079,14 @@ async fn execute_atomic_move_item(
     state.file_jobs.recompute_progress(&job.id).await
 }
 
+// @tour file-transfers:100 Copying one file
+// The actual byte pump. It clears any stale `.part` file, derives a collision-proof temp
+// name from the job id and a hash of the destination, and streams through a 1 MiB buffer.
+//
+// Every loop iteration re-checks cancellation and updates the item's byte count — so
+// cancellation granularity and progress granularity are both one megabyte. The finished
+// temp file is renamed onto the target, which makes the final file appear atomically.
+
 async fn copy_file_item(
     state: &AppState,
     job: &FileJob,
@@ -1095,6 +1167,15 @@ async fn execute_delete_job(state: &AppState, job: &FileJob) -> Result<(), FileO
     }
     Ok(())
 }
+
+// @tour comment Partial failure fails in the safe direction
+// Source deletion for a cross-root move is deliberately deferred until *all* items have
+// copied, so a mid-job failure leaves the sources completely intact and only a partially
+// populated destination.
+//
+// Resume safety comes from skipping already-done items plus `verify_existing_target`, which
+// marks an already-copied file done when its size matches instead of erroring. The deletion
+// loop also tolerates sources that have already vanished.
 
 async fn cleanup_move_sources(state: &AppState, job: &FileJob) -> Result<(), FileOpError> {
     for source_rel in &job.paths {

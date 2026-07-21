@@ -23,6 +23,15 @@ export function removeTrustedTotp(username: string, id?: string) {
   localStorage.removeItem(storageKey(username));
 }
 
+// @tour authentication:20 Deriving the trusted-device proof in the browser
+// A trusted device is a record in `localStorage` under `nasfiles-trusted-totp:<username>`
+// holding `{id, secret, hash}`. This returns the device id, the opaque server-issued hash,
+// and a freshly computed code from `generateTotp(stored.secret)`.
+//
+// `generateTotp` is a hand-rolled RFC 6238 implementation over WebCrypto: HMAC-SHA-1 over a
+// 30-second counter, dynamic truncation, modulo 1,000,000. So "remember this computer" is
+// literally a second TOTP secret the browser holds on the user's behalf.
+
 export async function trustedTotpProof(
   username: string,
 ): Promise<TrustedDeviceProof | null> {

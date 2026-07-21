@@ -39,6 +39,14 @@ impl SftpSessionRegistry {
         }
     }
 
+    // @tour sftp-server:90 Session bookkeeping
+    // `register` inserts an entry under a fresh UUID and hands back two `Arc<AtomicU64>`
+    // counters that the session increments on every read and write.
+    //
+    // The registry lives on `AppState` and is the live view behind the admin "active
+    // connections" tab. `list_guests` filters to temporary principals, so ordinary user
+    // sessions are tracked but not surfaced there.
+
     pub async fn register(
         &self,
         session_id: String,

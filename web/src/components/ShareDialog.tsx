@@ -34,6 +34,15 @@ interface ExistingShare {
   last_accessed_at: number | null;
 }
 
+// @tour share-management:10 Where a share is born
+// This modal is the only place in the UI that creates a share, and its local state is the
+// entire spec the backend will receive: `targetKind`, `password`, `shareType`, and
+// `expiresIn` (defaulting to one day).
+//
+// `generatePassword` uses `crypto.getRandomValues` over an ambiguity-free alphabet for
+// guest passwords. On open, an effect lists existing non-revoked, unexpired shares for this
+// `root`/`path`, so the user sees what already exists before making another.
+
 export function ShareDialog({
   open,
   root,
@@ -132,6 +141,14 @@ export function ShareDialog({
   }, [createdShareId, shareType]);
 
   if (!open) return null;
+
+  // @tour share-management:20 The create request leaves the browser
+  // `handleCreate` builds the body and posts it via `api.createShare`. It derives
+  // `allow_download` and `allow_upload` client-side from `shareType` and forces
+  // `share_type` back to `"typical"` for non-directories.
+  //
+  // The response is destructured into `shareUrl` and `createdShareId`. This is the one and
+  // only moment the raw token reaches the creator's browser as part of a create response.
 
   const handleCreate = async () => {
     setCreating(true);

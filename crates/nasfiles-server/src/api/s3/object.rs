@@ -21,6 +21,14 @@ pub fn xml_error(status: StatusCode, code: &str, message: &str) -> Response {
 
 // ---- List Objects ----
 
+// @tour s3-api:110 ListObjectsV2 as a directory walk
+// The bucket handler parses prefix, delimiter and a max-keys value clamped to 1000, then
+// delegates here. `collect_objects` walks the tree from the resolved base path, deriving
+// each key by stripping the base prefix and normalizing separators to forward slashes.
+//
+// A `/` delimiter turns a directory into a common prefix; any other delimiter recurses.
+// Truncation is detected by deliberately overshooting the limit by one and then trimming.
+
 pub async fn list_objects_inner(
     state: &AppState,
     principal: &S3Principal,
@@ -238,6 +246,15 @@ pub async fn get_object_inner(
     }
 }
 
+// @tour comment Chunked payloads are accepted but not unwrapped
+// This returns a hash only when the header is exactly 64 hex characters. Both the unsigned
+// and the streaming sentinels return `None`, which disables the body-hash check in
+// PutObject and UploadPart.
+//
+// Critically, when a client sends the streaming sentinel the body on the wire carries AWS
+// chunked-transfer framing, and neither handler strips it — those bytes are written to disk
+// verbatim. This is the sharpest S3-compatibility edge in the codebase.
+
 /// The lowercase hex SHA-256 the client committed to in `x-amz-content-sha256`,
 /// but only when it is a real digest. `UNSIGNED-PAYLOAD` and the streaming
 /// sentinels (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`, …) are not literal body
@@ -262,6 +279,16 @@ pub(super) fn expected_payload_sha256(headers: &HeaderMap) -> Option<String> {
 
 // ---- PutObject ----
 
+// @tour s3-api:120 PutObject: staged, hashed, then renamed
+// Reads take the easy route — GetObject resolves a safe path and hands off to the shared
+// file streamer, so it inherits Range support for free. Writes are harder.
+//
+// The key is pre-screened for NUL bytes, leading separators and `..` segments, parent
+// directories are created, and only then does `safe_path::resolve_parent` do the
+// authoritative containment and symlink check. The body streams into a temp file with a
+// running size check and an optional SHA-256 accumulator, and is renamed into place only
+// after the digest matches — so a partial object is never visible.
+
 pub async fn put_object_inner(
     state: &AppState,
     principal: &S3Principal,
@@ -273,6 +300,16 @@ pub async fn put_object_inner(
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
+
+    // @tour comment Two-stage path safety on the write path
+    // `safe_path::resolve_parent` can only canonicalize a parent that already exists, but
+    // S3 semantics require `PUT a/b/c.txt` to create the intermediate directories first.
+    //
+    // The resolution is to reject traversal syntax textually here, then create the
+    // directories, then let `resolve_parent` perform the real containment check and its
+    // symlink guard on the final component. `complete_multipart_upload_inner` repeats this
+    // block verbatim — the duplication is intentional but fragile, and a change to one must
+    // be mirrored in the other.
 
     // Pre-validate key before touching the filesystem. resolve_parent does the
     // full security check, but it requires the parent directory to exist first,

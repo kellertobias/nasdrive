@@ -11,6 +11,15 @@ pub enum RequiredCap {
     Share,
 }
 
+// @tour comment The capability gate shared by all three protocols
+// The capability is checked *before* the filesystem is consulted, dispatching on
+// `RequiredCap` to `can_read`/`can_write`/`can_share` and returning `Forbidden` on failure
+// — so an unauthorized root behaves identically whether or not it exists.
+//
+// The key `~` maps to the user's home folder and is created on demand; every other key must
+// appear in `config.common_folders`. The web API, the SFTP server and the S3 API all enter
+// here, which is why they cannot drift apart on permissions. See [root](glossary:root).
+
 /// Resolve a root key to a filesystem path, enforcing ACL.
 ///
 /// Returns the canonical root path if the user is authorized,

@@ -310,6 +310,14 @@ pub enum ShareAccessError {
     Internal(String),
 }
 
+// @tour comment Missing, expired and revoked are indistinguishable
+// `NotFound`, `Expired` and `Revoked` all collapse to the same 404 with the same body, so a
+// token cannot be probed for existence. Only `RateLimited`, `NoPassword` and the internal
+// variants differ.
+//
+// `resolve_share_unchecked` exists precisely because the OpenGraph endpoint needs to see
+// the distinction internally without leaking it over HTTP.
+
 impl axum::response::IntoResponse for ShareAccessError {
     fn into_response(self) -> axum::response::Response {
         use axum::http::StatusCode;

@@ -105,6 +105,16 @@ export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
     navigateToFiles();
   };
 
+  // @tour file-transfers:120 Progress flows back by polling
+  // There is no websocket: the UI polls the transfer-jobs endpoint once a second. The
+  // result fans out two ways — `TopBar` derives active and paused counts for the chrome,
+  // while `FileGrid` and `FileList` match jobs to individual rows and render progress bars,
+  // even synthesizing ghost rows for files that have not landed yet.
+  //
+  // The effect further down watches for jobs newly reaching `done` or `error` and
+  // invalidates the listing, tree and roots queries. That invalidation is what finally
+  // makes the copied files appear.
+
   const { data: transferJobData } = useQuery({
     queryKey: ["transfer-jobs"],
     queryFn: api.transferJobs,
