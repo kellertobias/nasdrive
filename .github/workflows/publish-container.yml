@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -67,3 +67,31 @@ jobs:
             NASFILES_BUILD_DATE=${{ steps.build.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Runs only for the tag pushed (and mirrored) after the Forgejo
+      # semantic-release job. The container above was already built and pushed
+      # to GHCR under this version; the release notes link straight to it.
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Container image
+
+            This release is published to the GitHub Container Registry:
+
+            ```bash
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.metadata.outputs.version }}
+            ```
+
+            This image is also tagged with the matching `MAJOR.MINOR` alias, and
+            `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest` tracks the newest release.
+            All published tags are listed at
+            https://github.com/${{ github.repository }}/pkgs/container/nasdrive
+
+            ---
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

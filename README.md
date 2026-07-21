@@ -62,7 +62,17 @@ For complete setup guides, see:
 - [Configuration reference](docs/configuration.md)
 - [Security model & operational notes](docs/security.md)
 
-Prebuilt images are published to `ghcr.io/<github-owner>/nasdrive:latest` by GitHub Actions. The existing Forgejo pipeline continues to publish the fixed `nasfiles` image name used by the hosted deployment.
+### Container images
+
+Prebuilt images are published to the GitHub Container Registry:
+
+- **[`ghcr.io/kellertobias/nasdrive`](https://github.com/kellertobias/tobisk-nasfiles/pkgs/container/nasdrive)** — `:latest` tracks `main`, and each [release](https://github.com/kellertobias/tobisk-nasfiles/releases) publishes immutable `:MAJOR.MINOR.PATCH` and `:MAJOR.MINOR` tags.
+
+```bash
+docker pull ghcr.io/kellertobias/nasdrive:latest
+```
+
+The Forgejo pipeline continues to publish the fixed `nasfiles` image name used by the hosted deployment; that name is unchanged.
 
 ## Features
 
@@ -201,6 +211,34 @@ For a local screenshot/demo environment:
 ```bash
 ./scripts/demo.sh
 ```
+
+## Releases & versioning
+
+Releases are fully automated from [Conventional Commits](https://www.conventionalcommits.org/). Version numbers are never bumped by hand.
+
+| Commit type | Release |
+| --- | --- |
+| `fix:` / `perf:` | patch (`x.y.Z`) |
+| `feat:` | minor (`x.Y.0`) |
+| `feat!:`, `fix!:`, … or a `BREAKING CHANGE:` footer | major (`X.0.0`) |
+| `docs:`, `test:`, `style:`, `refactor:`, `build:`, `ci:`, `chore:` | no release |
+
+**How it flows:**
+
+1. On every push to `main`, the **Forgejo** pipeline (`.forgejo/workflows/ci.yml`) runs the checks, test, and container build. If they pass, the `release` job runs [`semantic-release`](https://semantic-release.gitbook.io): it works out the next version from the commits, updates `Cargo.toml` + `Cargo.lock` (the authoritative version surfaces), writes `CHANGELOG.md`, commits `chore(release): vX.Y.Z [skip ci]`, and pushes a `vX.Y.Z` tag. Forgejo creates the tag only — no hosted Forgejo release.
+2. The commit and tag mirror to GitHub. The **GitHub** workflow (`.github/workflows/publish-container.yml`) triggers on the `v*` tag, builds the container, pushes it to `ghcr.io/kellertobias/nasdrive`, and creates the matching GitHub Release with notes that link the published image.
+
+**Details for maintainers:**
+
+- Release branch: `main`. Tag format: `vX.Y.Z`. Engine: `semantic-release` (pinned in the root `package.json` / `package-lock.json`; this root package is release-only and separate from the app frontend in `web/`).
+- Authoritative version files: `Cargo.toml` (`[workspace.package] version`) and `Cargo.lock`. Both crates inherit via `version.workspace = true`. The bump is applied by [`scripts/release/bump-version.sh`](scripts/release/bump-version.sh).
+- Required Forgejo secret: `SEMANTIC_RELEASE_TOKEN` — a token with permission to push the release commit to the protected `main` branch and to push tags. The GitHub release uses the automatic `GITHUB_TOKEN` (`contents: write`).
+- Preview the next release safely (no tag, no push):
+
+  ```bash
+  npm ci
+  npx semantic-release --dry-run --no-ci
+  ```
 
 ## Disclaimer
 

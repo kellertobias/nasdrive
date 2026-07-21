@@ -7,6 +7,9 @@ web/node_modules/
 web/dist/
 web/.vite/
 
+# Release tooling (root package.json is release-only; deps are installed in CI)
+/node_modules/
+
 # Environment
 .env
 .env.local
