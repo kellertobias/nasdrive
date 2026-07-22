@@ -88,7 +88,6 @@ function ShareViewer() {
     }>
   >([]);
   const [showUploadProgress, setShowUploadProgress] = useState(false);
-  const [isZipping, setIsZipping] = useState(false);
   const [zipError, setZipError] = useState("");
   const [activeDownloads, setActiveDownloads] = useState<
     Record<string, ActiveDownload>
@@ -284,6 +283,54 @@ function ShareViewer() {
       token,
       updateDownloadProgress,
     ],
+  );
+
+  const handleZipDownload = useCallback(
+    async (path: string, label: string) => {
+      if (!bearer) return;
+      const key = zipDownloadKey(path);
+      if (activeDownloadKeysRef.current.has(key)) return;
+      activeDownloadKeysRef.current.add(key);
+      setZipError("");
+      setActiveDownloads((prev) => ({
+        ...prev,
+        [key]: {
+          label,
+          loadedBytes: 0,
+          totalBytes: null,
+          pct: null,
+          status: "downloading",
+        },
+      }));
+      const handle = api.shareDownloadZip(token, bearer, [path], (progress) =>
+        updateDownloadProgress(key, label, progress),
+      );
+      downloadAbortMapRef.current.set(key, handle.abort);
+      try {
+        await handle.promise;
+      } catch (err) {
+        if (err instanceof DownloadAbortedError) {
+          setActiveDownloads((prev) => ({
+            ...prev,
+            [key]: {
+              ...(prev[key] ?? {
+                label,
+                loadedBytes: 0,
+                totalBytes: null,
+                pct: null,
+              }),
+              status: "cancelled",
+            },
+          }));
+          return;
+        }
+        setZipError(`Failed to download ${label.toLowerCase()}. Please try again.`);
+      } finally {
+        downloadAbortMapRef.current.delete(key);
+        clearDownloadSoon(key);
+      }
+    },
+    [bearer, clearDownloadSoon, token, updateDownloadProgress],
   );
 
   // Cancel pending upload auto-hide on unmount.
@@ -886,93 +933,67 @@ function ShareViewer() {
             </button>
           </>
         )}
-        {meta?.allow_download && entries.length > 0 && (
+        {meta?.allow_download && (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <button
-              disabled={isZipping}
-              onClick={async () => {
-                const key = zipDownloadKey(subPath || "");
-                if (activeDownloadKeysRef.current.has(key)) return;
-                activeDownloadKeysRef.current.add(key);
-                setIsZipping(true);
-                setZipError("");
-                setActiveDownloads((prev) => ({
-                  ...prev,
-                  [key]: {
-                    label: "download.zip",
-                    loadedBytes: 0,
-                    totalBytes: null,
-                    pct: null,
-                    status: "downloading",
-                  },
-                }));
-                const handle = api.shareDownloadZip(
-                  token,
-                  bearer,
-                  [subPath || ""],
-                  (progress) =>
-                    updateDownloadProgress(key, "download.zip", progress),
+            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+              {[
+                { path: "", label: "Download all" },
+                ...(subPath
+                  ? [{ path: subPath, label: "Download folder" }]
+                  : []),
+              ].map((download) => {
+                const key = zipDownloadKey(download.path);
+                const activeDownload = activeDownloads[key];
+                return (
+                  <button
+                    key={key}
+                    disabled={Boolean(activeDownload)}
+                    onClick={() =>
+                      handleZipDownload(download.path, download.label)
+                    }
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "var(--space-2)",
+                      padding: "var(--space-2) var(--space-3)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-md)",
+                      background: "var(--color-bg)",
+                      color: "var(--color-fg)",
+                      cursor: activeDownload ? "progress" : "pointer",
+                      opacity: activeDownload ? 0.7 : 1,
+                      fontWeight: 500,
+                      fontSize: "var(--text-sm)",
+                      transition: "background var(--duration-fast)",
+                    }}
+                    onMouseOver={(e) => {
+                      if (!activeDownload)
+                        e.currentTarget.style.background =
+                          "var(--color-bg-muted)";
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = "var(--color-bg)";
+                    }}
+                  >
+                    <Icon name="download" size={16} />
+                    {activeDownload
+                      ? downloadButtonLabel(activeDownload)
+                      : download.label}
+                  </button>
                 );
-                downloadAbortMapRef.current.set(key, handle.abort);
-                try {
-                  await handle.promise;
-                } catch (err) {
-                  if (err instanceof DownloadAbortedError) {
-                    setActiveDownloads((prev) => ({
-                      ...prev,
-                      [key]: {
-                        ...(prev[key] ?? {
-                          label: "download.zip",
-                          loadedBytes: 0,
-                          totalBytes: null,
-                          pct: null,
-                        }),
-                        status: "cancelled",
-                      },
-                    }));
-                    return;
-                  }
-                  setZipError("Failed to download files. Please try again.");
-                } finally {
-                  setIsZipping(false);
-                  downloadAbortMapRef.current.delete(key);
-                  clearDownloadSoon(key);
-                }
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                padding: "var(--space-2) var(--space-3)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg)",
-                color: "var(--color-fg)",
-                cursor: isZipping ? "default" : "pointer",
-                opacity: isZipping ? 0.7 : 1,
-                fontWeight: 500,
-                fontSize: "var(--text-sm)",
-                transition: "background var(--duration-fast)",
-              }}
-              onMouseOver={(e) => {
-                if (!isZipping)
-                  e.currentTarget.style.background = "var(--color-bg-muted)";
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.background = "var(--color-bg)";
-              }}
-            >
-              <Icon name="download" size={16} />
-              {isZipping
-                ? downloadButtonLabel(activeDownloads[zipDownloadKey(subPath || "")])
-                : "Download all"}
-            </button>
-            {activeDownloads[zipDownloadKey(subPath || "")] && (
-              <DownloadProgressBar
-                download={activeDownloads[zipDownloadKey(subPath || "")]}
-                onCancel={() => handleCancelDownload(zipDownloadKey(subPath || ""))}
-              />
-            )}
+              })}
+            </div>
+            {["", ...(subPath ? [subPath] : [])].map((path) => {
+              const key = zipDownloadKey(path);
+              const activeDownload = activeDownloads[key];
+              return activeDownload ? (
+                <DownloadProgressBar
+                  key={key}
+                  download={activeDownload}
+                  onCancel={() => handleCancelDownload(key)}
+                />
+              ) : null;
+            })}
             {zipError && (
               <span
                 style={{
