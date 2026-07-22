@@ -1,3 +1,10 @@
+## [1.0.1](https://git.tokenet.de/opensource/nasfiles/compare/v1.0.0...v1.0.1) (2026-07-22)
+
+### Bug Fixes
+
+* **ci:** keep release commit message subject-only so GitHub tag build runs ([0e061b4](https://git.tokenet.de/opensource/nasfiles/commit/0e061b44ce09ae8ad6c64995bc032eb847b5a3f1))
+* restore share creation and add scoped downloads ([4adf791](https://git.tokenet.de/opensource/nasfiles/commit/4adf7918c76ea64d948625a589ab0fbd96954e2a))
+
 ## 1.0.0 (2026-07-21)
 
 ### Features
