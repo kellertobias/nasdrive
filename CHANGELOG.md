@@ -1,3 +1,9 @@
+## [1.1.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.0.1...v1.1.0) (2026-07-22)
+
+### Features
+
+* add multi-select share downloads ([7848680](https://git.tokenet.de/opensource/nasfiles/commit/7848680667232b8589b9b705e2df97ba61e92f14))
+
 ## [1.0.1](https://git.tokenet.de/opensource/nasfiles/compare/v1.0.0...v1.0.1) (2026-07-22)
 
 ### Bug Fixes
