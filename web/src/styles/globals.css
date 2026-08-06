@@ -220,6 +220,53 @@ time,
   flex-direction: column;
 }
 
+/* ---- Pane resize handles ---- */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 4;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+/* The visible line: a hairline centred in the wider invisible hit area. */
+.resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.resize-handle:hover::before,
+.resize-handle:focus-visible::before,
+.resize-handle[data-resizing]::before {
+  background: var(--color-accent);
+}
+
+/* Fingers need a bigger target than a mouse pointer. */
+@media (pointer: coarse) {
+  .resize-handle {
+    width: 16px;
+  }
+
+  .resize-handle::before {
+    left: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resize-handle::before {
+    transition: none;
+  }
+}
+
 @media (max-width: 720px) {
   .share-access-log-entry {
     grid-template-columns: minmax(0, 1fr) auto;

@@ -33,7 +33,8 @@ import { ThumbnailImage } from "../components/ThumbnailImage";
 import { TransferProgressIndicator } from "../components/TransferProgressIndicator";
 import { ErrorDialog, ErrorToasts } from "../components/ErrorNotice";
 import type { ErrorNoticeData } from "../components/ErrorNotice";
-import { useViewStore } from "../state/view";
+import { ResizeHandle } from "../components/ResizeHandle";
+import { DEFAULT_SIDEBAR_WIDTH, useViewStore } from "../state/view";
 import {
   getExternalDropFiles,
   getFileDragPayload,
@@ -465,30 +466,6 @@ function FileBrowser() {
       }
     },
     [],
-  );
-
-  const startSidebarResize = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-      const startX = e.clientX;
-      const startWidth = sidebarWidth;
-      const onMove = (event: PointerEvent) => {
-        setSidebarWidth(
-          clamp(
-            startWidth + event.clientX - startX,
-            SIDEBAR_WIDTH.min,
-            SIDEBAR_WIDTH.max,
-          ),
-        );
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-    [setSidebarWidth, sidebarWidth],
   );
 
   // ---- Write operation handlers ----
@@ -1206,44 +1183,50 @@ function FileBrowser() {
           <aside
             style={{
               position: "relative",
+              display: "flex",
               width: sidebarWidth,
               minWidth: sidebarWidth,
+              flexShrink: 0,
+              minHeight: 0,
               borderRight: "1px solid var(--color-border)",
               background: "var(--color-sidebar-bg)",
-              overflowY: "auto",
-              overflowX: "hidden",
-              padding: "var(--space-2) 0",
             }}
           >
-            {user && (
-              <FolderTree
-                roots={user.roots}
-                activeRoot={root}
-                activePath={path}
-                onDropFiles={handleFileDrop}
-                transferJobs={activeTransferJobs}
-                customLinks={user.custom_links}
-                onNavigate={(rootKey, folderPath) => {
-                  navigate({
-                    to: "/r/$root/$",
-                    params: { root: rootKey, _splat: folderPath },
-                  });
-                }}
-              />
-            )}
+            {/* Scrolling lives here, not on <aside>, so the resize handle
+                below stays pinned to the edge as the tree scrolls. */}
             <div
-              role="separator"
-              aria-orientation="vertical"
-              onPointerDown={startSidebarResize}
               style={{
-                position: "absolute",
-                top: 0,
-                right: 0,
-                bottom: 0,
-                width: 6,
-                cursor: "col-resize",
-                zIndex: 3,
+                flex: 1,
+                minWidth: 0,
+                overflowY: "auto",
+                overflowX: "hidden",
+                padding: "var(--space-2) 0",
               }}
+            >
+              {user && (
+                <FolderTree
+                  roots={user.roots}
+                  activeRoot={root}
+                  activePath={path}
+                  onDropFiles={handleFileDrop}
+                  transferJobs={activeTransferJobs}
+                  customLinks={user.custom_links}
+                  onNavigate={(rootKey, folderPath) => {
+                    navigate({
+                      to: "/r/$root/$",
+                      params: { root: rootKey, _splat: folderPath },
+                    });
+                  }}
+                />
+              )}
+            </div>
+            <ResizeHandle
+              label="Resize sidebar"
+              value={sidebarWidth}
+              limits={SIDEBAR_WIDTH}
+              defaultValue={DEFAULT_SIDEBAR_WIDTH}
+              onChange={setSidebarWidth}
+              right={-3}
             />
           </aside>
         )}

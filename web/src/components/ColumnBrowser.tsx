@@ -27,7 +27,13 @@ import {
 } from "../lib/fileDrag";
 import { useGlobalDragCleanup } from "../lib/dragState";
 import { getFileIcon } from "../lib/icons";
-import { useViewStore } from "../state/view";
+import {
+  DEFAULT_FOLDER_COLUMN_WIDTH,
+  DEFAULT_INFO_COLUMN_WIDTH,
+  DEFAULT_SHARE_COLUMN_WIDTH,
+  useViewStore,
+} from "../state/view";
+import { ResizeHandle } from "./ResizeHandle";
 import { TransferProgressIndicator } from "./TransferProgressIndicator";
 import {
   incomingTransferPlaceholders,
@@ -298,36 +304,6 @@ export function ColumnBrowser({
     const lastColumn = columnRefs.current[folderColumns.length - 1];
     lastColumn?.scrollIntoView({ block: "nearest", inline: "end" });
   }, [folderColumns.length]);
-
-  const startResize = useCallback(
-    (
-      e: React.PointerEvent,
-      width: number,
-      limits: { min: number; max: number },
-      setter: (width: number) => void,
-      direction: 1 | -1 = 1,
-    ) => {
-      e.preventDefault();
-      const startX = e.clientX;
-      const startWidth = width;
-      const onMove = (event: PointerEvent) => {
-        setter(
-          clamp(
-            startWidth + (event.clientX - startX) * direction,
-            limits.min,
-            limits.max,
-          ),
-        );
-      };
-      const onUp = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-      };
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-    },
-    [],
-  );
 
   const focusFolderEntry = useCallback(
     (columnIndex: number, rowIndex: number) => {
@@ -610,10 +586,12 @@ export function ColumnBrowser({
       </aside>
 
       <ResizeHandle
+        label="Resize shares column"
+        value={shareColumnWidth}
+        limits={SHARE_WIDTH}
+        defaultValue={DEFAULT_SHARE_COLUMN_WIDTH}
+        onChange={setShareColumnWidth}
         left={shareColumnWidth - 3}
-        onPointerDown={(e) =>
-          startResize(e, shareColumnWidth, SHARE_WIDTH, setShareColumnWidth)
-        }
       />
 
       <div
@@ -648,10 +626,8 @@ export function ColumnBrowser({
               }
               canDrop={canDrop}
               transferJobs={transferJobs}
-              onResizeStart={(e) =>
-                startResize(e, width, FOLDER_WIDTH, (nextWidth) =>
-                  setWidthForColumn(column.path, nextWidth),
-                )
+              onResize={(nextWidth) =>
+                setWidthForColumn(column.path, nextWidth)
               }
               onSelect={(entry, rowIndex) => {
                 setFocus({ kind: "folder", columnIndex, rowIndex });
@@ -686,10 +662,13 @@ export function ColumnBrowser({
       </div>
 
       <ResizeHandle
+        label="Resize details pane"
+        value={infoColumnWidth}
+        limits={INFO_WIDTH}
+        defaultValue={DEFAULT_INFO_COLUMN_WIDTH}
+        onChange={setInfoColumnWidth}
+        direction={-1}
         right={infoColumnWidth - 3}
-        onPointerDown={(e) =>
-          startResize(e, infoColumnWidth, INFO_WIDTH, setInfoColumnWidth, -1)
-        }
       />
 
       <FileDetailsPane
@@ -720,7 +699,7 @@ function FolderColumnView({
   onPreview,
   onContextMenu,
   onDropFiles,
-  onResizeStart,
+  onResize,
 }: {
   refCallback: (element: HTMLDivElement | null) => void;
   column: FolderColumn;
@@ -742,7 +721,7 @@ function FolderColumnView({
     targetPath: string,
     e: React.DragEvent,
   ) => void;
-  onResizeStart: (e: React.PointerEvent) => void;
+  onResize: (width: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDropTarget, setIsDropTarget] = useState(false);
@@ -836,19 +815,13 @@ function FolderColumnView({
         position: "relative",
       }}
     >
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        onPointerDown={onResizeStart}
-        style={{
-          position: "absolute",
-          top: 0,
-          right: -3,
-          bottom: 0,
-          width: 6,
-          zIndex: 3,
-          cursor: "col-resize",
-        }}
+      <ResizeHandle
+        label={`Resize ${column.title} column`}
+        value={width}
+        limits={FOLDER_WIDTH}
+        defaultValue={DEFAULT_FOLDER_COLUMN_WIDTH}
+        onChange={onResize}
+        right={-3}
       />
       <div
         style={{
@@ -1253,45 +1226,6 @@ function ColumnEntryRow({
         <Icon name="chevronRight" size={14} color="var(--color-fg-subtle)" />
       </span>
     </button>
-  );
-}
-
-function ResizeHandle({
-  left,
-  right,
-  onPointerDown,
-}: {
-  left?: number;
-  right?: number;
-  onPointerDown: (e: React.PointerEvent) => void;
-}) {
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      onPointerDown={onPointerDown}
-      style={{
-        position: "absolute",
-        top: 0,
-        bottom: 0,
-        left,
-        right,
-        zIndex: 4,
-        width: 6,
-        cursor: "col-resize",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          bottom: 0,
-          left: 2,
-          width: 1,
-          background: "transparent",
-        }}
-      />
-    </div>
   );
 }
 

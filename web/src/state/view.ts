@@ -31,6 +31,12 @@ interface ViewState {
   toggleSidebar: () => void;
 }
 
+/** Widths a double-click on the matching resize handle restores. */
+export const DEFAULT_SIDEBAR_WIDTH = 240;
+export const DEFAULT_SHARE_COLUMN_WIDTH = 240;
+export const DEFAULT_FOLDER_COLUMN_WIDTH = 280;
+export const DEFAULT_INFO_COLUMN_WIDTH = 320;
+
 export const useViewStore = create<ViewState>()(
   persist(
     (set, get) => ({
@@ -39,10 +45,10 @@ export const useViewStore = create<ViewState>()(
       sortDirection: "asc",
       selectedPaths: new Set<string>(),
       sidebarOpen: true,
-      sidebarWidth: 240,
-      shareColumnWidth: 240,
-      folderColumnWidth: 280,
-      infoColumnWidth: 320,
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      shareColumnWidth: DEFAULT_SHARE_COLUMN_WIDTH,
+      folderColumnWidth: DEFAULT_FOLDER_COLUMN_WIDTH,
+      infoColumnWidth: DEFAULT_INFO_COLUMN_WIDTH,
 
       setViewMode: (mode) => set({ viewMode: mode }),
       setSortField: (field) => {
