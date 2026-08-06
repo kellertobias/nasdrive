@@ -1,3 +1,9 @@
+## [1.2.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.1.0...v1.2.0) (2026-08-06)
+
+### Features
+
+* make sidebar resize discoverable and keyboard-accessible ([7eb26f2](https://git.tokenet.de/opensource/nasfiles/commit/7eb26f2776330b11693639f7a1d8537568c0494c))
+
 ## [1.1.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.0.1...v1.1.0) (2026-07-22)
 
 ### Features
