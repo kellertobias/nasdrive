@@ -1,4 +1,6 @@
-const CACHE_NAME = "nasfiles-shell-v2";
+// Bumped with the caching-strategy change so the activate handler drops
+// entries written under the old, broader interception rules.
+const CACHE_NAME = "nasfiles-shell-v3";
 const SHELL_ASSETS = ["/", "/manifest.webmanifest", "/favicon.svg"];
 const SHARE_DB_NAME = "nasfiles-share-target";
 const SHARE_STORE_NAME = "incoming-shares";
@@ -49,13 +51,17 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (isStaticAsset(url.pathname)) {
-    event.respondWith(cacheFirstWithRefresh(event.request));
+    event.respondWith(
+      cacheFirst(event.request, { revalidate: !isImmutableAsset(url.pathname) }),
+    );
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request)),
-  );
+  // Everything else — API calls, thumbnails, downloads, media streams — falls
+  // through to the network untouched. Calling respondWith here would put a
+  // CacheStorage lookup in front of every request for entries this worker never
+  // writes, and would route file downloads and ranged media through the worker,
+  // which defeats streaming and makes the browser buffer large files in memory.
 });
 
 async function handleShareTarget(request) {
@@ -111,29 +117,44 @@ async function storeShare(record) {
 
 function isStaticAsset(pathname) {
   return (
-    pathname.startsWith("/assets/") ||
+    isImmutableAsset(pathname) ||
     pathname.startsWith("/pwa/") ||
     pathname === "/manifest.webmanifest" ||
     pathname === "/favicon.svg"
   );
 }
 
-async function cacheFirstWithRefresh(request) {
+/**
+ * Vite writes content-hashed filenames under /assets/, so a cached response
+ * there can never go stale — a changed file arrives under a new name.
+ */
+function isImmutableAsset(pathname) {
+  return pathname.startsWith("/assets/");
+}
+
+/**
+ * Serve from cache, filling it on a miss.
+ *
+ * `revalidate` refreshes the entry in the background after serving, for assets
+ * whose filename stays the same across builds. Immutable assets skip it: doing
+ * it there meant re-downloading the whole JS bundle on every single load to
+ * replace it with a byte-identical copy.
+ */
+async function cacheFirst(request, { revalidate }) {
   const cached = await caches.match(request);
-  const refresh = fetch(request).then(async (response) => {
+
+  const fromNetwork = async () => {
+    const response = await fetch(request);
     if (response.ok) {
       const cache = await caches.open(CACHE_NAME);
       await cache.put(request, response.clone());
     }
     return response;
-  });
+  };
 
-  if (cached) {
-    refresh.catch(() => undefined);
-    return cached;
-  }
-
-  return refresh;
+  if (!cached) return fromNetwork();
+  if (revalidate) fromNetwork().catch(() => undefined);
+  return cached;
 }
 
 async function navigationFallback(request) {

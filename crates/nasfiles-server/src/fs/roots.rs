@@ -71,7 +71,51 @@ pub fn resolve_root(
 }
 
 /// Get the list of roots visible to the current user.
+///
+/// Leaves `usage` unset. Filling it in means a `statvfs` per root, which is
+/// blocking syscall work and can touch a sleeping pool — most callers (SFTP,
+/// S3, search) only want the key/caps and should not pay for it. Callers that
+/// render the capacity rings use [`visible_roots_with_usage`].
 pub fn visible_roots(config: &AppConfig, user: &AuthUser) -> Vec<Root> {
+    visible_roots_with_paths(config, user)
+        .into_iter()
+        .map(|(root, _)| root)
+        .collect()
+}
+
+/// [`visible_roots`] with each root's capacity filled in.
+///
+/// The `statvfs` calls run on the blocking pool so a stalled pool cannot park a
+/// runtime worker.
+pub async fn visible_roots_with_usage(config: &AppConfig, user: &AuthUser) -> Vec<Root> {
+    let with_paths = visible_roots_with_paths(config, user);
+
+    let usages = tokio::task::spawn_blocking(move || {
+        with_paths
+            .into_iter()
+            .map(|(root, path)| {
+                let usage = usage_for_path(path.as_deref());
+                (root, usage)
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::error!("root usage probe task failed: {e}");
+        Vec::new()
+    });
+
+    usages
+        .into_iter()
+        .map(|(mut root, usage)| {
+            root.usage = usage;
+            root
+        })
+        .collect()
+}
+
+/// The visible roots paired with the path whose filesystem backs each one.
+fn visible_roots_with_paths(config: &AppConfig, user: &AuthUser) -> Vec<(Root, Option<PathBuf>)> {
     let mut roots = Vec::new();
 
     // Add allowed common folders (sorted alphabetically for consistent UI)
@@ -82,34 +126,40 @@ pub fn visible_roots(config: &AppConfig, user: &AuthUser) -> Vec<Root> {
     common_keys.sort();
 
     for key in common_keys {
-        roots.push(Root {
-            key: key.clone(),
-            display_name: key.clone(),
-            kind: RootKind::Common,
-            caps: user
-                .folder_permissions
-                .get(key)
-                .copied()
-                .unwrap_or_default(),
-            group: config.share_group_of_folder.get(key).cloned(),
-            usage: usage_for_path(config.common_folders.get(key).map(PathBuf::as_path)),
-        });
+        roots.push((
+            Root {
+                key: key.clone(),
+                display_name: key.clone(),
+                kind: RootKind::Common,
+                caps: user
+                    .folder_permissions
+                    .get(key)
+                    .copied()
+                    .unwrap_or_default(),
+                group: config.share_group_of_folder.get(key).cloned(),
+                usage: None,
+            },
+            config.common_folders.get(key).cloned(),
+        ));
     }
 
     // Add home folder if available
     if user.has_home {
-        roots.push(Root {
-            key: "~".to_string(),
-            display_name: "Personal".to_string(),
-            kind: RootKind::Home,
-            caps: FolderCaps {
-                read: true,
-                write: true,
-                share: true,
+        roots.push((
+            Root {
+                key: "~".to_string(),
+                display_name: "Personal".to_string(),
+                kind: RootKind::Home,
+                caps: FolderCaps {
+                    read: true,
+                    write: true,
+                    share: true,
+                },
+                group: None,
+                usage: None,
             },
-            group: None,
-            usage: usage_for_path(config.home_folder_root.as_deref()),
-        });
+            config.home_folder_root.clone(),
+        ));
     }
 
     order_roots_by_group(&mut roots);
@@ -123,8 +173,8 @@ pub fn visible_roots(config: &AppConfig, user: &AuthUser) -> Vec<Root> {
 /// and within each group, while keeping every group's members contiguous. A
 /// group only appears here when at least one of its folders is readable by the
 /// user, so empty groups never reach the sidebar.
-fn order_roots_by_group(roots: &mut [Root]) {
-    roots.sort_by(|a, b| a.group.cmp(&b.group));
+fn order_roots_by_group(roots: &mut [(Root, Option<PathBuf>)]) {
+    roots.sort_by(|a, b| a.0.group.cmp(&b.0.group));
 }
 
 fn usage_for_path(path: Option<&Path>) -> Option<RootUsage> {
@@ -224,18 +274,15 @@ mod tests {
     fn order_roots_groups_contiguously_with_ungrouped_first() {
         // Incoming order mirrors visible_roots: common folders alphabetical
         // (mixing grouped and ungrouped), then the home root last.
-        let mut roots = vec![
+        let order = ordered_keys(vec![
             root("Documents", None),
             root("Movies", Some("Media")),
             root("Projects", Some("Work")),
             root("TV Shows", Some("Media")),
             root("Scratch", None),
             root("~", None),
-        ];
+        ]);
 
-        order_roots_by_group(&mut roots);
-
-        let order: Vec<&str> = roots.iter().map(|r| r.key.as_str()).collect();
         assert_eq!(
             order,
             vec![
@@ -264,13 +311,21 @@ mod tests {
             root("Scratch", None),
             root("~", None),
         ];
-        let mut roots = original.clone();
 
-        order_roots_by_group(&mut roots);
+        let before: Vec<String> = original.iter().map(|r| r.key.clone()).collect();
+        let after = ordered_keys(original);
 
-        let before: Vec<&str> = original.iter().map(|r| r.key.as_str()).collect();
-        let after: Vec<&str> = roots.iter().map(|r| r.key.as_str()).collect();
         assert_eq!(before, after);
-        assert!(roots.iter().all(|r| r.group.is_none()));
+    }
+
+    /// Apply the real ordering to a plain root list and report the resulting
+    /// keys. `order_roots_by_group` works on the `(Root, backing path)` pairs
+    /// `visible_roots_with_paths` builds, so the tests pair each root with a
+    /// `None` path.
+    fn ordered_keys(roots: Vec<Root>) -> Vec<String> {
+        let mut paired: Vec<(Root, Option<PathBuf>)> =
+            roots.into_iter().map(|r| (r, None)).collect();
+        order_roots_by_group(&mut paired);
+        paired.into_iter().map(|(r, _)| r.key).collect()
     }
 }

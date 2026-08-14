@@ -19,7 +19,7 @@ pub async fn list_roots(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
 ) -> impl IntoResponse {
-    let roots = roots::visible_roots(&state.config, &user);
+    let roots = roots::visible_roots_with_usage(&state.config, &user).await;
     Json(serde_json::json!({ "roots": roots }))
 }
 
@@ -58,6 +58,28 @@ pub struct PreviewQuery {
     pub segment: Option<String>,
 }
 
+/// Resolve `path` under `root_path`, mapping a traversal or missing path to the
+/// right HTTP status.
+// The error type is an already-rendered `Response`, matching how every handler
+// in this module reports failure. Boxing it here would just force the callers
+// to unbox before returning.
+#[allow(clippy::result_large_err)]
+fn resolve_within_root(
+    root_path: &std::path::Path,
+    path: &str,
+) -> Result<std::path::PathBuf, axum::response::Response> {
+    nasfiles_core::safe_path::resolve(root_path, path).map_err(|e| {
+        let status = match e {
+            nasfiles_core::safe_path::SafePathError::Traversal => axum::http::StatusCode::FORBIDDEN,
+            nasfiles_core::safe_path::SafePathError::NotFound(_) => {
+                axum::http::StatusCode::NOT_FOUND
+            }
+            _ => axum::http::StatusCode::BAD_REQUEST,
+        };
+        (status, Json(serde_json::json!({"error": e.to_string()}))).into_response()
+    })
+}
+
 /// GET /api/files/:root/list?path=... — list directory contents.
 pub async fn list_directory(
     State(state): State<AppState>,
@@ -68,25 +90,44 @@ pub async fn list_directory(
     let root_path = roots::resolve_root(&state.config, &user, &root_key, roots::RequiredCap::Read)
         .map_err(|e| e.into_response())?;
 
-    let resolved = nasfiles_core::safe_path::resolve(&root_path, &query.path).map_err(|e| {
-        let status = match e {
-            nasfiles_core::safe_path::SafePathError::Traversal => axum::http::StatusCode::FORBIDDEN,
-            nasfiles_core::safe_path::SafePathError::NotFound(_) => {
-                axum::http::StatusCode::NOT_FOUND
-            }
-            _ => axum::http::StatusCode::BAD_REQUEST,
-        };
-        (status, Json(serde_json::json!({"error": e.to_string()}))).into_response()
-    })?;
+    let resolved = resolve_within_root(&root_path, &query.path)?;
 
-    let mut entries = listing::list_directory(&resolved, !state.config.no_server_side_execution)
-        .map_err(|e| e.into_response())?;
+    let mut entries =
+        listing::list_directory_async(resolved, !state.config.no_server_side_execution)
+            .await
+            .map_err(|e| e.into_response())?;
     attach_gallery_feedback_to_entries(&state, &user.user_id, &root_key, &query.path, &mut entries)
         .await;
 
     Ok(Json(serde_json::json!({
         "path": query.path,
         "entries": entries,
+    })))
+}
+
+/// GET /api/files/:root/counts?path=... — child counts for each subdirectory.
+///
+/// Split out of the listing on purpose: it costs one `read_dir` per subfolder,
+/// so folding it into `/list` put N extra seeks in front of the first paint.
+/// The browser fetches this after the listing renders and fills the counts in.
+pub async fn directory_counts(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(root_key): Path<String>,
+    Query(query): Query<ListQuery>,
+) -> Result<impl IntoResponse, axum::response::Response> {
+    let root_path = roots::resolve_root(&state.config, &user, &root_key, roots::RequiredCap::Read)
+        .map_err(|e| e.into_response())?;
+
+    let resolved = resolve_within_root(&root_path, &query.path)?;
+
+    let counts = listing::child_counts_async(resolved)
+        .await
+        .map_err(|e| e.into_response())?;
+
+    Ok(Json(serde_json::json!({
+        "path": query.path,
+        "counts": counts,
     })))
 }
 
@@ -100,18 +141,10 @@ pub async fn list_tree(
     let root_path = roots::resolve_root(&state.config, &user, &root_key, roots::RequiredCap::Read)
         .map_err(|e| e.into_response())?;
 
-    let resolved = nasfiles_core::safe_path::resolve(&root_path, &query.path).map_err(|e| {
-        let status = match e {
-            nasfiles_core::safe_path::SafePathError::Traversal => axum::http::StatusCode::FORBIDDEN,
-            nasfiles_core::safe_path::SafePathError::NotFound(_) => {
-                axum::http::StatusCode::NOT_FOUND
-            }
-            _ => axum::http::StatusCode::BAD_REQUEST,
-        };
-        (status, Json(serde_json::json!({"error": e.to_string()}))).into_response()
-    })?;
+    let resolved = resolve_within_root(&root_path, &query.path)?;
 
-    let dirs = listing::list_directories(&resolved, !state.config.no_server_side_execution)
+    let dirs = listing::list_directories_async(resolved, !state.config.no_server_side_execution)
+        .await
         .map_err(|e| e.into_response())?;
 
     Ok(Json(serde_json::json!({

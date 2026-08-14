@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import api from "../api/client";
 import type { Root, FileEntry, CustomLink } from "../api/client";
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { ICONS } from "../lib/icons";
 import {
@@ -38,6 +38,9 @@ interface ShareGroup {
   roots: Root[];
 }
 
+/** How deep the sidebar will expand before it stops rendering children. */
+const MAX_TREE_DEPTH = 8;
+
 /// Split the flat roots list into ungrouped roots followed by named groups,
 /// preserving the backend's ordering (ungrouped first, each group's members
 /// contiguous). A group only appears when it has at least one visible root.
@@ -64,7 +67,14 @@ function partitionRoots(roots: Root[]): {
   return { ungrouped, groups };
 }
 
-export function FolderTree({
+/**
+ * The sidebar tree is not virtualized — it renders every child of every
+ * expanded node, down to `MAX_TREE_DEPTH`. That makes memoizing the node
+ * components load-bearing rather than a micro-optimization: without it, any
+ * re-render of the file browser route walks the entire visible tree, and with
+ * transfer progress polling that happened on a timer.
+ */
+function FolderTreeImpl({
   roots,
   activeRoot,
   activePath,
@@ -461,7 +471,7 @@ interface TreeChildrenProps {
   depth: number;
 }
 
-function TreeChildren({
+function TreeChildrenImpl({
   rootKey,
   path,
   activePath,
@@ -581,7 +591,7 @@ function CustomLinkItem({ link }: { link: CustomLink }) {
   );
 }
 
-function TreeNode({
+function TreeNodeImpl({
   rootKey,
   entry,
   parentPath,
@@ -615,10 +625,14 @@ function TreeNode({
     onNavigate(rootKey, fullPath);
   };
 
-  // Auto-expand if the active path is within this node
-  if (isInActiveLine && !expanded) {
-    setExpanded(true);
-  }
+  // Auto-expand when the active path moves into this node (never auto-collapse,
+  // so a folder the user opened by hand stays open). This used to call
+  // `setExpanded` straight from the render body, which made React throw the
+  // render away and redo it — doubling the work for every node on the active
+  // path, and for the whole subtree each node renders.
+  useEffect(() => {
+    if (isInActiveLine) setExpanded(true);
+  }, [isInActiveLine]);
 
   useGlobalDragCleanup(resetDropTarget);
 
@@ -775,7 +789,7 @@ function TreeNode({
         <TransferProgressIndicator jobs={displayedTransferJobs} compact />
       </button>
 
-      {expanded && depth < 8 && (
+      {expanded && depth < MAX_TREE_DEPTH && (
         <div
           role="group"
           style={{
@@ -800,3 +814,7 @@ function TreeNode({
     </div>
   );
 }
+
+export const FolderTree = memo(FolderTreeImpl);
+const TreeChildren = memo(TreeChildrenImpl);
+const TreeNode = memo(TreeNodeImpl);

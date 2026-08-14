@@ -1,9 +1,9 @@
 import type { FileEntry } from "../api/client";
 import { getFileIcon, formatFileSize, formatModifiedDate } from "../lib/icons";
-import { useViewStore } from "../state/view";
+import { useViewSlice } from "../state/view";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 import { FileIcon } from "./Icon";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   entryPath,
@@ -38,6 +38,8 @@ interface FileListProps {
     e: React.DragEvent,
   ) => void;
   transferJobs?: TransferJob[];
+  /** Child counts by folder name, fetched separately from the listing. */
+  itemCounts?: Record<string, number>;
 }
 
 const LIST_ROW_HEIGHT = 38;
@@ -49,7 +51,7 @@ type ListItem =
       placeholder: ReturnType<typeof incomingTransferPlaceholders>[number];
     };
 
-export function FileList({
+function FileListImpl({
   entries,
   onOpen,
   root = "",
@@ -58,6 +60,7 @@ export function FileList({
   onContextMenu,
   onDropFiles,
   transferJobs = [],
+  itemCounts,
 }: FileListProps) {
   const {
     selectedPaths,
@@ -68,16 +71,31 @@ export function FileList({
     sortField,
     setSortField,
     sortDirection,
-  } = useViewStore();
+  } = useViewSlice((s) => ({
+    selectedPaths: s.selectedPaths,
+    select: s.select,
+    toggleSelect: s.toggleSelect,
+    rangeSelect: s.rangeSelect,
+    clearSelection: s.clearSelection,
+    sortField: s.sortField,
+    setSortField: s.setSortField,
+    sortDirection: s.sortDirection,
+  }));
   const lastClickedIndex = useRef<number>(-1);
   const listRef = useRef<HTMLDivElement>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const resetDropTarget = useCallback(() => setDropTarget(null), []);
-  const transferPlaceholders = incomingTransferPlaceholders(
-    transferJobs,
-    root,
-    path,
-    entries.map((entry) => entry.name),
+  // Memoized so it doesn't hand `items` below a fresh array on every render,
+  // which would make that `useMemo` a no-op.
+  const transferPlaceholders = useMemo(
+    () =>
+      incomingTransferPlaceholders(
+        transferJobs,
+        root,
+        path,
+        entries.map((entry) => entry.name),
+      ),
+    [entries, path, root, transferJobs],
   );
 
   const sorted = useMemo(
@@ -313,6 +331,9 @@ export function FileList({
           const filePath = entryPath(path, entry.name);
           const isSelected = selectedPaths.has(filePath);
           const icon = getFileIcon(entry);
+          // `item_count` on the entry is a fallback for listings that still
+          // carry it (public shares); normally counts arrive out of band.
+          const itemCount = itemCounts?.[entry.name] ?? entry.item_count;
           const isDropTarget =
             dropTarget === filePath || isDemoDropTarget(root, filePath);
           const isBeingDragged = isDemoDraggedPath(root, filePath);
@@ -542,8 +563,8 @@ export function FileList({
                   : isBeingMoved
                     ? "Moving..."
                     : entry.is_dir
-                      ? entry.item_count != null
-                        ? `${entry.item_count} ${entry.item_count === 1 ? "item" : "items"}`
+                      ? itemCount != null
+                        ? `${itemCount} ${itemCount === 1 ? "item" : "items"}`
                         : "—"
                       : formatFileSize(entry.size)}
               </div>
@@ -565,3 +586,6 @@ export function FileList({
     </div>
   );
 }
+
+/** Memoized for the same reason as `FileGrid`. */
+export const FileList = memo(FileListImpl);

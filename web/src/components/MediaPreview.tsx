@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import videojs from "video.js";
 import "@videojs/http-streaming";
+import "video.js/dist/video-js.css";
+import "../styles/media-player.css";
 import type { FileEntry, PreviewStatus } from "../api/client";
 import { Icon } from "./Icon";
 
@@ -347,7 +349,9 @@ function VideoJsPlayer({
   onError: (message: string) => void;
   onTimelineStateChange?: (state: PlayerTimelineState) => void;
 }) {
-  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  // React owns the container; video.js owns everything inside it. Keeping that
+  // boundary is what makes teardown safe — see the effect below.
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<ReturnType<typeof videojs> | null>(null);
   const onErrorRef = useRef(onError);
   const onTimelineStateChangeRef = useRef(onTimelineStateChange);
@@ -361,8 +365,31 @@ function VideoJsPlayer({
   }, [onTimelineStateChange]);
 
   useEffect(() => {
-    const mediaEl = mediaRef.current;
-    if (!mediaEl) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Create the media element imperatively rather than rendering it as JSX.
+    // `player.dispose()` removes its element from the DOM, and when that
+    // element was one React rendered, React's own unmount later tries to remove
+    // a node that is already gone — a `NotFoundError` from `removeChild` that
+    // takes down the whole tree. Switching between two videos hit the same bug
+    // from the other side: the effect re-ran after dispose had detached the
+    // element, so `videojs` initialised against a node no longer in the
+    // document and the player came up blank. Because React never sees this
+    // element, neither can happen.
+    let mediaEl: HTMLAudioElement | HTMLVideoElement;
+    if (kind === "audio") {
+      mediaEl = document.createElement("audio");
+      mediaEl.className = "video-js vjs-default-skin";
+    } else {
+      const videoEl = document.createElement("video");
+      videoEl.className = "video-js vjs-default-skin vjs-big-play-centered";
+      videoEl.playsInline = true;
+      videoEl.style.maxHeight = "calc(100vh - 190px)";
+      mediaEl = videoEl;
+    }
+    mediaEl.style.width = "100%";
+    container.appendChild(mediaEl);
 
     const player = videojs(mediaEl, {
       autoplay: true,
@@ -418,48 +445,37 @@ function VideoJsPlayer({
     return () => {
       player.dispose();
       playerRef.current = null;
+      // dispose() takes the media element with it, but leaves the wrapper
+      // video.js generated. Clear whatever remains so a re-run starts from an
+      // empty container.
+      container.replaceChildren();
     };
   }, [contentType, kind, sourceUrl]);
 
-  if (kind === "audio") {
-    return (
-      <div
-        data-preview-no-close
-        className="nasfiles-media-player"
-        data-vjs-player
-        style={{ width: "100%" }}
-      >
-        <audio
-          ref={mediaRef as React.RefObject<HTMLAudioElement>}
-          className="video-js vjs-default-skin"
-          playsInline
-          style={{ width: "100%" }}
-        />
-      </div>
-    );
-  }
-
   return (
+    // Deliberately no `data-vjs-player`: that attribute tells video.js to adopt
+    // this element as the player itself, and `dispose()` then removes it — but
+    // React owns this node and expects it to still be there. Without the
+    // attribute video.js generates its own wrapper inside, which is what
+    // `dispose()` tears down. The stylesheet matches `.video-js` as a
+    // descendant, so the generated wrapper is styled either way.
     <div
+      ref={containerRef}
       data-preview-no-close
       className="nasfiles-media-player"
-      data-vjs-player
-      style={{
-        width: "100%",
-        maxHeight: "calc(100vh - 190px)",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-        borderRadius: "var(--radius-lg)",
-        overflow: "hidden",
-        background: "#000",
-      }}
-    >
-      <video
-        ref={mediaRef as React.RefObject<HTMLVideoElement>}
-        className="video-js vjs-default-skin vjs-big-play-centered"
-        playsInline
-        style={{ width: "100%", maxHeight: "calc(100vh - 190px)" }}
-      />
-    </div>
+      style={
+        kind === "audio"
+          ? { width: "100%" }
+          : {
+              width: "100%",
+              maxHeight: "calc(100vh - 190px)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              borderRadius: "var(--radius-lg)",
+              overflow: "hidden",
+              background: "#000",
+            }
+      }
+    />
   );
 }
 

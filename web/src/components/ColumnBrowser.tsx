@@ -31,6 +31,7 @@ import {
   DEFAULT_FOLDER_COLUMN_WIDTH,
   DEFAULT_INFO_COLUMN_WIDTH,
   DEFAULT_SHARE_COLUMN_WIDTH,
+  useViewSlice,
   useViewStore,
 } from "../state/view";
 import { ResizeHandle } from "./ResizeHandle";
@@ -152,7 +153,18 @@ export function ColumnBrowser({
     infoColumnWidth,
     setShareColumnWidth,
     setInfoColumnWidth,
-  } = useViewStore();
+  } = useViewSlice((s) => ({
+    selectedPaths: s.selectedPaths,
+    select: s.select,
+    toggleSelect: s.toggleSelect,
+    selectAll: s.selectAll,
+    clearSelection: s.clearSelection,
+    shareColumnWidth: s.shareColumnWidth,
+    folderColumnWidth: s.folderColumnWidth,
+    infoColumnWidth: s.infoColumnWidth,
+    setShareColumnWidth: s.setShareColumnWidth,
+    setInfoColumnWidth: s.setInfoColumnWidth,
+  }));
   const activeShareName =
     roots.find((root) => root.key === activeRoot)?.display_name ?? activeRoot;
   const [folderColumnWidths, setFolderColumnWidths] = useState<
@@ -979,7 +991,7 @@ function ColumnTransferPlaceholderRow({
     >
       <FileIcon svg={icon.svg} color="var(--color-fg-subtle)" size={18} />
       <span style={{ minWidth: 0, fontWeight: 400, overflow: "hidden" }}>
-        <MiddleEllipsis text={name} maxWidth={Number.MAX_SAFE_INTEGER} />
+        <MiddleEllipsis text={name} />
       </span>
       <span
         title={`${percent}%`}
@@ -1203,7 +1215,7 @@ function ColumnEntryRow({
           overflow: "hidden",
         }}
       >
-        <MiddleEllipsis text={entry.name} maxWidth={Number.MAX_SAFE_INTEGER} />
+        <MiddleEllipsis text={entry.name} />
       </span>
       {isBeingMoved ? (
         <span

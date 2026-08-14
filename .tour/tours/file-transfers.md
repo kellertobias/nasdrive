@@ -24,7 +24,7 @@ flowchart TD
   F --> G["plan_copy_move_job<br/>→ file_operation_items"]
   G --> H["execute_copy_like_job<br/>→ per-item copy/rename"]
   H --> I["recompute_progress"]
-  I -.->|"polled every 1s"| J["TopBar transfer-jobs query"]
+  I -.->|"polled: 1s active, 30s idle"| J["TopBar transfer-jobs query"]
 ```
 
 The handler validates *nothing*. Every ACL and path check is deferred to the

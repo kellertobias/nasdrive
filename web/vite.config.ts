@@ -12,6 +12,29 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Keep the framework in its own long-lived chunk so an app-code change
+        // doesn't invalidate it in the browser cache. The heavy preview
+        // dependencies (video.js, CodeMirror, the markdown renderer) are split
+        // out by the dynamic imports in `src/components/lazy.ts` instead of
+        // being named here, so they load only when a preview opens.
+        codeSplitting: {
+          groups: [
+            {
+              name: "react",
+              test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+            },
+            {
+              name: "router",
+              test: /node_modules[\\/]@tanstack[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {

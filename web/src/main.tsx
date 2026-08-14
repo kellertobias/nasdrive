@@ -5,9 +5,10 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { routeTree } from "./routeTree.gen";
 
+// The video.js stylesheet and its overrides are imported by `MediaPreview`, so
+// they ship with the lazily-loaded player chunk rather than blocking first
+// paint for every visitor who only wants to browse files.
 import "./styles/globals.css";
-import "video.js/dist/video-js.css";
-import "./styles/media-player.css";
 
 interface GlobalErrorBoundaryState {
   error: Error | null;

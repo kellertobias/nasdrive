@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { formatDate, formatFileSize, getFileIcon } from "../lib/icons";
 import { AppLogo } from "./AppLogo";
-import { transferProgressPercent } from "../lib/transferJobs";
+import { transferProgressPercent, useTransferJobs } from "../lib/transferJobs";
 
 interface TopBarProps {
   user: UserInfo | null;
@@ -56,7 +56,7 @@ function formatRemainingTime(ms: number | null) {
 }
 
 export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
-  const { toggleSidebar } = useViewStore();
+  const toggleSidebar = useViewStore((s) => s.toggleSidebar);
   const navigate = useNavigate();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -106,35 +106,38 @@ export function TopBar({ user, onMobileSidebarToggle }: TopBarProps) {
   };
 
   // @tour file-transfers:120 Progress flows back by polling
-  // There is no websocket: the UI polls the transfer-jobs endpoint once a second. The
-  // result fans out two ways — `TopBar` derives active and paused counts for the chrome,
-  // while `FileGrid` and `FileList` match jobs to individual rows and render progress bars,
-  // even synthesizing ghost rows for files that have not landed yet.
+  // There is no websocket: the UI polls the transfer-jobs endpoint. `useTransferJobs`
+  // owns the cadence — one second while a job is in flight, every 30s when the queue is
+  // empty — and both this component and the file browser share the single query behind
+  // it. The result fans out two ways: `TopBar` derives active and paused counts for the
+  // chrome, while `FileGrid` and `FileList` match jobs to individual rows and render
+  // progress bars, even synthesizing ghost rows for files that have not landed yet.
   //
   // The effect further down watches for jobs newly reaching `done` or `error` and
   // invalidates the listing, tree and roots queries. That invalidation is what finally
   // makes the copied files appear.
 
-  const { data: transferJobData } = useQuery({
-    queryKey: ["transfer-jobs"],
-    queryFn: api.transferJobs,
-    enabled: Boolean(user),
-    refetchInterval: user ? 1000 : false,
-    staleTime: 1000,
-  });
+  const transferJobs = useTransferJobs(Boolean(user));
 
-  const transferJobs = useMemo(
-    () => transferJobData?.jobs ?? [],
-    [transferJobData?.jobs],
-  );
-  const activeTransferJobs = transferJobs.filter(
-    (job) => job.status === "queued" || job.status === "running",
-  );
-  const pausedTransferJobs = transferJobs.filter(
-    (job) => job.status === "paused_needs_confirmation",
-  );
-  const visibleTransferJobs = [...pausedTransferJobs, ...activeTransferJobs];
-  const activeTransferCount = activeTransferJobs.length;
+  const {
+    activeTransferJobs,
+    pausedTransferJobs,
+    visibleTransferJobs,
+    activeTransferCount,
+  } = useMemo(() => {
+    const active = transferJobs.filter(
+      (job) => job.status === "queued" || job.status === "running",
+    );
+    const paused = transferJobs.filter(
+      (job) => job.status === "paused_needs_confirmation",
+    );
+    return {
+      activeTransferJobs: active,
+      pausedTransferJobs: paused,
+      visibleTransferJobs: [...paused, ...active],
+      activeTransferCount: active.length,
+    };
+  }, [transferJobs]);
   const activeOperation = activeTransferJobs.some(
     (job) => job.operation === "delete",
   )

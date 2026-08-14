@@ -410,6 +410,12 @@ export interface DirectoryListing {
   entries: FileEntry[];
 }
 
+export interface DirectoryCounts {
+  path: string;
+  /** Visible child count per subdirectory name. Absent = not counted. */
+  counts: Record<string, number>;
+}
+
 export interface TreeListing {
   path: string;
   children: FileEntry[];
@@ -565,6 +571,19 @@ export const api = {
   listTree: (root: string, path: string = "") =>
     apiFetch<TreeListing>(
       `/api/files/${encodeURIComponent(root)}/tree?path=${encodeURIComponent(path)}`,
+    ),
+
+  /**
+   * Child counts for the subdirectories of `path`, keyed by folder name.
+   *
+   * Deliberately separate from `listDirectory`: the server needs one directory
+   * scan per subfolder to produce these, so keeping them out of the listing is
+   * what lets a folder render before the counts are known. Fetch this second
+   * and merge the result in — a missing entry means "not counted yet".
+   */
+  directoryCounts: (root: string, path: string = "") =>
+    apiFetch<DirectoryCounts>(
+      `/api/files/${encodeURIComponent(root)}/counts?path=${encodeURIComponent(path)}`,
     ),
 
   search: (q: string, limit: number = 100) => {

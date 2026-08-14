@@ -1,13 +1,10 @@
-import { useEffect, useCallback, useState, useRef } from "react";
+import { useEffect, useCallback, useState, useRef, Suspense } from "react";
 import type { FileEntry } from "../api/client";
 import api from "../api/client";
 import { getPreviewType, getFileIcon, formatFileSize } from "../lib/icons";
 import { Icon, FileIcon } from "./Icon";
-import { MediaPreview } from "./MediaPreview";
+import { CodeViewer, MediaPreview } from "./lazy";
 import { GalleryFeedbackBadges } from "./GalleryFeedbackBadges";
-import CodeMirror from "@uiw/react-codemirror";
-import { monokai } from "@uiw/codemirror-theme-monokai";
-import { loadLanguage } from "@uiw/codemirror-extensions-langs";
 interface PreviewPaneProps {
   entry: FileEntry;
   root: string;
@@ -340,31 +337,35 @@ export function PreviewPane({
           <ImagePreview url={imagePreviewUrl} name={entry.name} />
         )}
         {previewType === "video" && (
-          <MediaPreview
-            entry={entry}
-            kind="video"
-            actualUrl={downloadUrl}
-            canTranscode={mediaPreviewTranscodingEnabled}
-            createPreviewUrl={createMediaPreviewUrl}
-            loadPreviewStatus={loadMediaPreviewStatus}
-            loadFileInfo={loadMediaInfo}
-            initialFileInfo={fileInfo}
-            onInfoLoaded={setFileInfo}
-          />
+          <Suspense fallback={<MediaLoading />}>
+            <MediaPreview
+              entry={entry}
+              kind="video"
+              actualUrl={downloadUrl}
+              canTranscode={mediaPreviewTranscodingEnabled}
+              createPreviewUrl={createMediaPreviewUrl}
+              loadPreviewStatus={loadMediaPreviewStatus}
+              loadFileInfo={loadMediaInfo}
+              initialFileInfo={fileInfo}
+              onInfoLoaded={setFileInfo}
+            />
+          </Suspense>
         )}
         {previewType === "audio" && (
-          <MediaPreview
-            entry={entry}
-            kind="audio"
-            actualUrl={downloadUrl}
-            coverArtUrl={audioCoverUrl}
-            canTranscode={mediaPreviewTranscodingEnabled}
-            createPreviewUrl={createMediaPreviewUrl}
-            loadPreviewStatus={loadMediaPreviewStatus}
-            loadFileInfo={loadMediaInfo}
-            initialFileInfo={fileInfo}
-            onInfoLoaded={setFileInfo}
-          />
+          <Suspense fallback={<MediaLoading />}>
+            <MediaPreview
+              entry={entry}
+              kind="audio"
+              actualUrl={downloadUrl}
+              coverArtUrl={audioCoverUrl}
+              canTranscode={mediaPreviewTranscodingEnabled}
+              createPreviewUrl={createMediaPreviewUrl}
+              loadPreviewStatus={loadMediaPreviewStatus}
+              loadFileInfo={loadMediaInfo}
+              initialFileInfo={fileInfo}
+              onInfoLoaded={setFileInfo}
+            />
+          </Suspense>
         )}
         {previewType === "text" && (
           <TextPreview url={downloadUrl} name={entry.name} />
@@ -617,16 +618,6 @@ function TextPreview({ url, name }: { url: string; name: string }) {
       <div style={{ color: "rgba(255,255,255,0.5)" }}>Failed to load file</div>
     );
 
-  const ext = name.split(".").pop()?.toLowerCase();
-  let langExtension;
-  try {
-    langExtension = ext
-      ? loadLanguage(ext as Parameters<typeof loadLanguage>[0])
-      : undefined;
-  } catch {
-    // Ignore unsupported languages
-  }
-
   return (
     <div
       style={{
@@ -646,17 +637,11 @@ function TextPreview({ url, name }: { url: string; name: string }) {
         <div className="shimmer" style={{ flex: 1, borderRadius: 8 }} />
       ) : (
         <div style={{ flex: 1, overflow: "auto" }}>
-          <CodeMirror
-            value={content}
-            editable={false}
-            theme={monokai}
-            extensions={langExtension ? [langExtension] : []}
-            basicSetup={{
-              lineNumbers: true,
-              foldGutter: true,
-              highlightActiveLine: true,
-            }}
-          />
+          <Suspense
+            fallback={<div className="shimmer" style={{ height: "100%" }} />}
+          >
+            <CodeViewer content={content} name={name} />
+          </Suspense>
         </div>
       )}
     </div>
@@ -842,3 +827,18 @@ const navArrowStyle: React.CSSProperties = {
   zIndex: 210,
   transition: "background var(--duration-fast) var(--ease-out)",
 };
+
+/** Placeholder shown while the media player chunk is fetched. */
+function MediaLoading() {
+  return (
+    <div
+      className="shimmer"
+      style={{
+        width: "100%",
+        maxWidth: 1000,
+        aspectRatio: "16 / 9",
+        borderRadius: "var(--radius-lg)",
+      }}
+    />
+  );
+}

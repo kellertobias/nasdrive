@@ -25,7 +25,7 @@ pub async fn me(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
 ) -> impl IntoResponse {
-    let roots = crate::fs::roots::visible_roots(&state.config, &user);
+    let roots = crate::fs::roots::visible_roots_with_usage(&state.config, &user).await;
     let server_side_enabled = !state.config.no_server_side_execution;
 
     let sftp_hostname = state.config.public_hostname();

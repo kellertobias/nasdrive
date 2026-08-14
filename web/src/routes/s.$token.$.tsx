@@ -3,7 +3,14 @@ import {
   useParams,
   useNavigate,
 } from "@tanstack/react-router";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  Suspense,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import api, { DownloadAbortedError, UploadAbortedError } from "../api/client";
 import type { DownloadProgress, FileEntry, GalleryItem, ShareType } from "../api/client";
@@ -15,8 +22,8 @@ import {
   getPreviewType,
 } from "../lib/icons";
 import { FileIcon, Icon } from "../components/Icon";
-import { DirectoryReadme } from "../components/DirectoryReadme";
-import { MediaPreview } from "../components/MediaPreview";
+import { DirectoryReadme } from "../components/lazy";
+import { MediaPreview } from "../components/lazy";
 
 export const Route = createFileRoute("/s/$token/$")({
   component: ShareViewer,
@@ -1303,10 +1310,12 @@ function ShareViewer() {
         </div>
 
         {entries.length > 0 && (
-          <DirectoryReadme
-            entries={entries}
-            shareConfig={{ token, bearer, subPath }}
-          />
+          <Suspense fallback={null}>
+            <DirectoryReadme
+              entries={entries}
+              shareConfig={{ token, bearer, subPath }}
+            />
+          </Suspense>
         )}
       </div>
       {previewDialog}
@@ -2269,15 +2278,17 @@ function ShareMediaPreviewDialog({
           padding: "var(--space-4)",
         }}
       >
-        <MediaPreview
-          entry={target.entry}
-          kind={kind}
-          actualUrl={actualUrl}
-          canTranscode
-          createPreviewUrl={createPreviewUrl}
-          loadPreviewStatus={loadPreviewStatus}
-          loadFileInfo={loadFileInfo}
-        />
+        <Suspense fallback={null}>
+          <MediaPreview
+            entry={target.entry}
+            kind={kind}
+            actualUrl={actualUrl}
+            canTranscode
+            createPreviewUrl={createPreviewUrl}
+            loadPreviewStatus={loadPreviewStatus}
+            loadFileInfo={loadFileInfo}
+          />
+        </Suspense>
       </div>
     </div>
   );

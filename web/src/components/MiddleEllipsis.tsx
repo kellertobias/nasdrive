@@ -1,91 +1,68 @@
-import { useRef, useEffect, useState } from "react";
-
 interface MiddleEllipsisProps {
   text: string;
-  maxWidth?: number;
+  /** Width cap for the name. Defaults to filling whatever the parent allows. */
+  maxWidth?: number | string;
 }
 
 /**
  * Truncates text in the middle so file extensions remain visible.
- * Falls back to CSS ellipsis if canvas measurement isn't available.
+ *
+ * Pure CSS, no measurement. The name is split into a stem that is allowed to
+ * shrink and ellipsize, and a suffix (the extension) pinned at its natural
+ * width, so the browser's own layout does the truncation:
+ *
+ *     [ Some very long file na… ][ .mkv ]
+ *       flex: 0 1 auto, ellipsis   flex-shrink: 0
+ *
+ * The previous implementation measured with a canvas: every instance created a
+ * `<canvas>`, called `getComputedStyle` (which forces a synchronous layout) and
+ * ran a binary search of `measureText` calls — in an effect, for every row in a
+ * virtualized list. Scrolling mounts rows continuously, so that ran constantly
+ * and showed up directly as scroll jank. It was also only approximate, because
+ * it truncated against the `maxWidth` prop rather than the real column width.
  */
-export function MiddleEllipsis({ text, maxWidth = 200 }: MiddleEllipsisProps) {
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const [displayText, setDisplayText] = useState(text);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const computedStyle = getComputedStyle(container);
-    ctx.font = `${computedStyle.fontSize} ${computedStyle.fontFamily}`;
-
-    const fullWidth = ctx.measureText(text).width;
-    const containerWidth = maxWidth;
-
-    if (fullWidth <= containerWidth) {
-      setDisplayText(text);
-      return;
-    }
-
-    const ellipsis = "…";
-    const ellipsisWidth = ctx.measureText(ellipsis).width;
-    const availableWidth = containerWidth - ellipsisWidth;
-
-    // Find the extension (last dot and everything after)
-    const lastDot = text.lastIndexOf(".");
-    let start = text;
-    let end = "";
-
-    if (lastDot > 0) {
-      end = text.substring(lastDot);
-      start = text.substring(0, lastDot);
-    }
-
-    const endWidth = ctx.measureText(end).width;
-    const startAvailable = availableWidth - endWidth;
-
-    if (startAvailable <= 0) {
-      setDisplayText(text);
-      return;
-    }
-
-    // Binary search for the right truncation point
-    let lo = 0;
-    let hi = start.length;
-    while (lo < hi) {
-      const mid = Math.ceil((lo + hi) / 2);
-      const substr = start.substring(0, mid);
-      if (ctx.measureText(substr).width <= startAvailable) {
-        lo = mid;
-      } else {
-        hi = mid - 1;
-      }
-    }
-
-    if (lo < start.length) {
-      setDisplayText(`${start.substring(0, lo)}${ellipsis}${end}`);
-    } else {
-      setDisplayText(text);
-    }
-  }, [text, maxWidth]);
+export function MiddleEllipsis({
+  text,
+  maxWidth = "100%",
+}: MiddleEllipsisProps) {
+  const { stem, suffix } = splitOnExtension(text);
 
   return (
     <span
-      ref={containerRef}
       title={text}
       style={{
-        display: "inline-block",
+        display: "inline-flex",
         maxWidth,
+        minWidth: 0,
         overflow: "hidden",
         whiteSpace: "nowrap",
+        verticalAlign: "bottom",
       }}
     >
-      {displayText}
+      <span
+        style={{
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {stem}
+      </span>
+      {suffix && (
+        <span style={{ flexShrink: 0, whiteSpace: "pre" }}>{suffix}</span>
+      )}
     </span>
   );
+}
+
+/**
+ * Split a filename into the part that may be truncated and the extension to
+ * keep. A leading dot is part of the name, not an extension, and a name with no
+ * dot has nothing to pin.
+ */
+function splitOnExtension(text: string): { stem: string; suffix: string } {
+  const lastDot = text.lastIndexOf(".");
+  if (lastDot <= 0) return { stem: text, suffix: "" };
+  return { stem: text.slice(0, lastDot), suffix: text.slice(lastDot) };
 }

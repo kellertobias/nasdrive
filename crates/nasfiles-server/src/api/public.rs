@@ -185,7 +185,7 @@ pub async fn share_list(
             Err(e) => return e.into_response(),
         };
 
-    match listing::list_directory(&resolved, !state.config.no_server_side_execution) {
+    match listing::list_directory_async(resolved, !state.config.no_server_side_execution).await {
         Ok(entries) => {
             let ip = extract_ip(&headers, state.config.trusted_proxy_depth);
             let ua = extract_user_agent(&headers);

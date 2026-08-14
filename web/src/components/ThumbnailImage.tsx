@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileEntry } from "../api/client";
 import api from "../api/client";
 import { getFileIcon } from "../lib/icons";
@@ -26,6 +26,7 @@ export function ThumbnailImage({
   const [loaded, setLoaded] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
+  const retryTimer = useRef<number | undefined>(undefined);
   const entryPath = path ? `${path}/${entry.name}` : entry.name;
   const src = useMemo(
     () => api.thumbnailUrl(root, entryPath, width, entry, attempt),
@@ -37,6 +38,19 @@ export function ThumbnailImage({
     setAttempt(0);
     setFailed(false);
   }, [entryPath, entry.modified_at, entry.size, width]);
+
+  // Rows mount and unmount constantly while a virtualized grid scrolls. Without
+  // this, every thumbnail that errored left a retry timer behind, so scrolling
+  // past a stretch of unrenderable files queued a burst of requests for tiles
+  // that were long gone from the screen.
+  useEffect(
+    () => () => {
+      if (retryTimer.current !== undefined) {
+        window.clearTimeout(retryTimer.current);
+      }
+    },
+    [],
+  );
 
   if (failed) {
     const icon = getFileIcon(entry);
@@ -79,7 +93,10 @@ export function ThumbnailImage({
             setFailed(true);
             return;
           }
-          window.setTimeout(() => setAttempt((value) => value + 1), delay);
+          retryTimer.current = window.setTimeout(
+            () => setAttempt((value) => value + 1),
+            delay,
+          );
         }}
         style={{
           width: "100%",

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileEntry } from "../api/client";
 import { getFileIcon, formatFileSize, hasThumbnail } from "../lib/icons";
-import { useViewStore } from "../state/view";
+import { useViewSlice } from "../state/view";
 import { MiddleEllipsis } from "./MiddleEllipsis";
 import { FileIcon } from "./Icon";
 import { ThumbnailImage } from "./ThumbnailImage";
@@ -39,6 +39,8 @@ interface FileGridProps {
     e: React.DragEvent,
   ) => void;
   transferJobs?: TransferJob[];
+  /** Child counts by folder name, fetched separately from the listing. */
+  itemCounts?: Record<string, number>;
 }
 
 const GRID_MIN_TILE_WIDTH = 160;
@@ -71,7 +73,7 @@ function useElementWidth(ref: React.RefObject<HTMLElement | null>) {
   return width;
 }
 
-export function FileGrid({
+function FileGridImpl({
   entries,
   onOpen,
   root = "",
@@ -80,18 +82,31 @@ export function FileGrid({
   onContextMenu,
   onDropFiles,
   transferJobs = [],
+  itemCounts,
 }: FileGridProps) {
   const { selectedPaths, select, toggleSelect, rangeSelect, clearSelection } =
-    useViewStore();
+    useViewSlice((s) => ({
+      selectedPaths: s.selectedPaths,
+      select: s.select,
+      toggleSelect: s.toggleSelect,
+      rangeSelect: s.rangeSelect,
+      clearSelection: s.clearSelection,
+    }));
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const resetDropTarget = useCallback(() => setDropTarget(null), []);
   const gridRef = useRef<HTMLDivElement>(null);
   const gridWidth = useElementWidth(gridRef);
-  const transferPlaceholders = incomingTransferPlaceholders(
-    transferJobs,
-    root,
-    path,
-    entries.map((entry) => entry.name),
+  // Memoized so it doesn't hand `items` below a fresh array on every render,
+  // which would make that `useMemo` a no-op.
+  const transferPlaceholders = useMemo(
+    () =>
+      incomingTransferPlaceholders(
+        transferJobs,
+        root,
+        path,
+        entries.map((entry) => entry.name),
+      ),
+    [entries, path, root, transferJobs],
   );
   const items = useMemo<GridItem[]>(
     () => [
@@ -227,6 +242,9 @@ export function FileGrid({
             const filePath = entryPath(path, entry.name);
             const isSelected = selectedPaths.has(filePath);
             const icon = getFileIcon(entry);
+            // `item_count` on the entry is a fallback for listings that still
+            // carry it (public shares); normally counts arrive out of band.
+            const itemCount = itemCounts?.[entry.name] ?? entry.item_count;
             const showThumb = hasThumbnail(entry) && root;
             const isDropTarget =
               dropTarget === filePath || isDemoDropTarget(root, filePath);
@@ -475,7 +493,7 @@ export function FileGrid({
                   !isBeingDragged &&
                   !isDragHover &&
                   (entry.is_dir ? (
-                    entry.item_count != null && (
+                    itemCount != null && (
                       <div
                         className="tabular-nums"
                         style={{
@@ -483,9 +501,7 @@ export function FileGrid({
                           color: "var(--color-fg-subtle)",
                         }}
                       >
-                        {entry.item_count === 1
-                          ? "1 item"
-                          : `${entry.item_count} items`}
+                        {itemCount === 1 ? "1 item" : `${itemCount} items`}
                       </div>
                     )
                   ) : (
@@ -506,3 +522,10 @@ export function FileGrid({
     </div>
   );
 }
+
+/**
+ * Memoized: the file browser route re-renders on plenty of state the grid does
+ * not care about (dialogs, error toasts, pane widths), and re-rendering the
+ * grid means re-running the virtualizer and every visible tile.
+ */
+export const FileGrid = memo(FileGridImpl);

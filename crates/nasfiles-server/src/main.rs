@@ -177,6 +177,7 @@ async fn main() -> anyhow::Result<()> {
             post(api::files::cleanup_file_job),
         )
         .route("/files/{root}/list", get(api::files::list_directory))
+        .route("/files/{root}/counts", get(api::files::directory_counts))
         .route("/files/{root}/tree", get(api::files::list_tree))
         .route("/files/{root}/download", get(api::files::download_file))
         .route("/files/{root}/preview", get(api::files::preview_file))

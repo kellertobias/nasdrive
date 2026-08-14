@@ -37,16 +37,34 @@ function useResizeDrag() {
       body.style.userSelect = "none";
       setResizing(true);
 
+      // A pointer can report well over 100 moves a second, and each `setter`
+      // call is a store write that re-renders the pane and schedules a
+      // persisted width. Coalescing onto animation frames caps that at one
+      // update per painted frame — the drag looks identical and costs a
+      // fraction as much.
+      let frame: number | null = null;
+      let pendingWidth: number | null = null;
+
+      const applyPending = () => {
+        frame = null;
+        if (pendingWidth === null) return;
+        setter(pendingWidth);
+        pendingWidth = null;
+      };
+
       const onMove = (event: PointerEvent) => {
-        setter(
-          clamp(
-            startWidth + (event.clientX - startX) * direction,
-            limits.min,
-            limits.max,
-          ),
+        pendingWidth = clamp(
+          startWidth + (event.clientX - startX) * direction,
+          limits.min,
+          limits.max,
         );
+        if (frame === null) frame = window.requestAnimationFrame(applyPending);
       };
       const stop = () => {
+        // Land the last sample: the final pointermove may still be queued
+        // behind a frame that never runs once listeners are gone.
+        if (frame !== null) window.cancelAnimationFrame(frame);
+        applyPending();
         body.style.cursor = previousCursor;
         body.style.userSelect = previousUserSelect;
         setResizing(false);
@@ -57,6 +75,9 @@ function useResizeDrag() {
       };
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key !== "Escape") return;
+        // Drop the queued sample first, or `stop`'s flush would immediately
+        // re-apply the width Escape is meant to discard.
+        pendingWidth = null;
         setter(startWidth);
         stop();
       };

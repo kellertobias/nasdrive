@@ -336,7 +336,8 @@ async fn list_share_directory(
 
     let resolved = nasfiles_core::safe_path::resolve(&root_path, &share.relative_path)
         .map_err(|e| e.to_string())?;
-    let entries = listing::list_directory(&resolved, !state.config.no_server_side_execution)
+    let entries = listing::list_directory_async(resolved, !state.config.no_server_side_execution)
+        .await
         .map_err(|e| e.to_string())?;
 
     Ok(serde_json::json!({

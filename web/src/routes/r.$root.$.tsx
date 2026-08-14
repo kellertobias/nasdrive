@@ -5,7 +5,14 @@ import {
 } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+  Suspense,
+} from "react";
 import api, { formatApiError, formatApiErrorDetails } from "../api/client";
 import type { FileEntry } from "../api/client";
 import type { ExtractMode } from "../api/client";
@@ -24,7 +31,7 @@ import { ContextMenu } from "../components/ContextMenu";
 import type { ContextMenuItem } from "../components/ContextMenu";
 import { ShareDialog } from "../components/ShareDialog";
 import { PreviewPane } from "../components/PreviewPane";
-import { DirectoryReadme } from "../components/DirectoryReadme";
+import { DirectoryReadme } from "../components/lazy";
 import {
   FileDetailsPane,
   type FileDetailsSelection,
@@ -34,7 +41,11 @@ import { TransferProgressIndicator } from "../components/TransferProgressIndicat
 import { ErrorDialog, ErrorToasts } from "../components/ErrorNotice";
 import type { ErrorNoticeData } from "../components/ErrorNotice";
 import { ResizeHandle } from "../components/ResizeHandle";
-import { DEFAULT_SIDEBAR_WIDTH, useViewStore } from "../state/view";
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  useViewSlice,
+  useViewStore,
+} from "../state/view";
 import {
   getExternalDropFiles,
   getFileDragPayload,
@@ -48,6 +59,7 @@ import { useGlobalDragCleanup } from "../lib/dragState";
 import {
   isActiveTransferJob,
   transferJobsForTarget,
+  useTransferJobs,
 } from "../lib/transferJobs";
 import { formatFileSize, formatModifiedDate, getFileIcon } from "../lib/icons";
 import type { DirectoryListing, TransferJob } from "../api/client";
@@ -156,7 +168,16 @@ function FileBrowser() {
     sortDirection,
     setSidebarWidth,
     setViewMode,
-  } = useViewStore();
+  } = useViewSlice((s) => ({
+    viewMode: s.viewMode,
+    sidebarOpen: s.sidebarOpen,
+    sidebarWidth: s.sidebarWidth,
+    selectedPaths: s.selectedPaths,
+    sortField: s.sortField,
+    sortDirection: s.sortDirection,
+    setSidebarWidth: s.setSidebarWidth,
+    setViewMode: s.setViewMode,
+  }));
   const uploadZoneRef = useRef<UploadZoneHandle>(null);
   const mobileUploadZoneRef = useRef<UploadZoneHandle>(null);
   const mobileListingScrollRef = useRef<HTMLDivElement>(null);
@@ -233,13 +254,20 @@ function FileBrowser() {
     refetchIntervalInBackground: false,
   });
 
-  const { data: transferJobData } = useQuery({
-    queryKey: ["transfer-jobs"],
-    queryFn: api.transferJobs,
-    enabled: Boolean(user),
-    refetchInterval: user ? 1000 : false,
-    staleTime: 1000,
+  // Folder child counts arrive separately from the listing. The server needs a
+  // directory scan per subfolder to produce them, so folding them into `/list`
+  // meant the first paint waited on N extra seeks. This query starts only once
+  // the listing has resolved, and the counts appear in the already-rendered
+  // rows a moment later.
+  const { data: countsData } = useQuery({
+    queryKey: ["listing-counts", root, path],
+    queryFn: () => api.directoryCounts(root, path),
+    enabled: Boolean(listing),
+    staleTime: 60_000,
   });
+  const itemCounts = countsData?.counts;
+
+  const transferJobs = useTransferJobs(Boolean(user));
 
   const currentRoot = user?.roots.find((r) => r.key === root);
   const caps = currentRoot?.caps || { read: true, write: false, share: false };
@@ -253,14 +281,16 @@ function FileBrowser() {
     () => demoTransferJobsFromLocalStorage(),
     [],
   );
-  const activeTransferJobs = [
-    ...(transferJobData?.jobs ?? []).filter(isActiveTransferJob),
-    ...demoTransferJobs,
-  ];
-  const currentFolderTransferJobs = transferJobsForTarget(
-    activeTransferJobs,
-    root,
-    path,
+  // Memoized because this array is a prop to the folder tree, the grid and the
+  // list, none of which can skip a re-render if it arrives with a fresh
+  // identity on every render of this (very large) component.
+  const activeTransferJobs = useMemo(
+    () => [...transferJobs.filter(isActiveTransferJob), ...demoTransferJobs],
+    [demoTransferJobs, transferJobs],
+  );
+  const currentFolderTransferJobs = useMemo(
+    () => transferJobsForTarget(activeTransferJobs, root, path),
+    [activeTransferJobs, path, root],
   );
   const isDemoCurrentFolderDropTarget = isDemoDropTarget(root, path);
   const breadcrumbPath = viewMode === "columns" ? columnDisplayPath : path;
@@ -384,17 +414,22 @@ function FileBrowser() {
     return () => window.removeEventListener("keydown", handler);
   }, [listing, path, previewTarget, togglePreviewAtPath]);
 
-  const navigateTo = (entry: FileEntry) => {
-    const newPath = path ? `${path}/${entry.name}` : entry.name;
-    if (entry.is_dir) {
-      navigate({
-        to: "/r/$root/$",
-        params: { root, _splat: newPath },
-      });
-    } else {
-      setPreviewTarget({ entry, parentPath: path });
-    }
-  };
+  // Stable identity matters: this is a prop to the memoized grid and list, and
+  // a fresh closure on every render would defeat the memo.
+  const navigateTo = useCallback(
+    (entry: FileEntry) => {
+      const newPath = path ? `${path}/${entry.name}` : entry.name;
+      if (entry.is_dir) {
+        navigate({
+          to: "/r/$root/$",
+          params: { root, _splat: newPath },
+        });
+      } else {
+        setPreviewTarget({ entry, parentPath: path });
+      }
+    },
+    [navigate, path, root],
+  );
 
   const openEntryAtPath = (entry: FileEntry, parentPath: string) => {
     const newPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
@@ -608,13 +643,16 @@ function FileBrowser() {
     [executeTransfer, resetCurrentDropTarget, showErrorToast, user?.roots],
   );
 
-  const handleContextMenu = (e: React.MouseEvent, entry: FileEntry) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const entryPath = path ? `${path}/${entry.name}` : entry.name;
-    useViewStore.getState().select(entryPath);
-    setContextMenu({ x: e.clientX, y: e.clientY, entry, parentPath: path });
-  };
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent, entry: FileEntry) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const entryPath = path ? `${path}/${entry.name}` : entry.name;
+      useViewStore.getState().select(entryPath);
+      setContextMenu({ x: e.clientX, y: e.clientY, entry, parentPath: path });
+    },
+    [path],
+  );
 
   const handleContextMenuAtPath = (
     e: React.MouseEvent,
@@ -780,7 +818,13 @@ function FileBrowser() {
     [caps.write, listing, path],
   );
 
-  const selectedItems = Array.from(selectedPaths);
+  // Memoized because the folder-size effect below lists this in its
+  // dependencies. As a bare `Array.from` it was a new array on every render,
+  // so that effect re-ran every render — and since it calls `setState` with a
+  // fresh object, each run scheduled the next one. React eventually gives up
+  // with "Maximum update depth exceeded", which the global error boundary
+  // shows as "The app crashed".
+  const selectedItems = useMemo(() => Array.from(selectedPaths), [selectedPaths]);
   const selectedCount = selectedItems.length;
   const selectedItemsKey = selectedItems.join("\n");
 
@@ -792,9 +836,17 @@ function FileBrowser() {
     Record<string, number>
   >({});
 
+  // Returning the current value tells React to bail out, so clearing an
+  // already-empty map costs nothing and cannot schedule a render.
+  const clearSelectionDirSizes = useCallback(() => {
+    setSelectionDirSizes((current) =>
+      Object.keys(current).length === 0 ? current : {},
+    );
+  }, []);
+
   useEffect(() => {
     if (!listing || selectedCount === 0) {
-      setSelectionDirSizes({});
+      clearSelectionDirSizes();
       return;
     }
     const selectedDirPaths = selectedItems.filter((p) => {
@@ -807,7 +859,7 @@ function FileBrowser() {
       );
     });
     if (!root || selectedDirPaths.length === 0) {
-      setSelectionDirSizes({});
+      clearSelectionDirSizes();
       return;
     }
     let cancelled = false;
@@ -820,7 +872,7 @@ function FileBrowser() {
     return () => {
       cancelled = true;
     };
-  }, [root, path, selectedItems, listing, selectedCount]);
+  }, [clearSelectionDirSizes, root, path, selectedItems, listing, selectedCount]);
 
   const selectionStats = useMemo(() => {
     if (selectedCount === 0 || !listing) return null;
@@ -1096,6 +1148,7 @@ function FileBrowser() {
                   path={path}
                   selectedPaths={selectedPaths}
                   transferJobs={activeTransferJobs}
+                  itemCounts={itemCounts}
                   scrollParentRef={mobileListingScrollRef}
                   onOpen={navigateTo}
                   onSelect={(entryPath) =>
@@ -1686,6 +1739,7 @@ function FileBrowser() {
                         onContextMenu={handleContextMenu}
                         onDropFiles={handleFileDrop}
                         transferJobs={activeTransferJobs}
+                        itemCounts={itemCounts}
                       />
                     )}
 
@@ -1702,6 +1756,7 @@ function FileBrowser() {
                         onContextMenu={handleContextMenu}
                         onDropFiles={handleFileDrop}
                         transferJobs={activeTransferJobs}
+                        itemCounts={itemCounts}
                       />
                     )}
 
@@ -1718,12 +1773,14 @@ function FileBrowser() {
                 </div>
 
                 {readmeShown && listing && (
-                  <DirectoryReadme
-                    entries={listing.entries}
-                    root={root}
-                    path={path}
-                    onClose={() => setReadmeHidden(true)}
-                  />
+                  <Suspense fallback={null}>
+                    <DirectoryReadme
+                      entries={listing.entries}
+                      root={root}
+                      path={path}
+                      onClose={() => setReadmeHidden(true)}
+                    />
+                  </Suspense>
                 )}
               </div>
 
@@ -2671,6 +2728,7 @@ function MobileFileList({
   path,
   selectedPaths,
   transferJobs,
+  itemCounts,
   scrollParentRef,
   onOpen,
   onSelect,
@@ -2683,13 +2741,18 @@ function MobileFileList({
   path: string;
   selectedPaths: Set<string>;
   transferJobs: TransferJob[];
+  /** Child counts by folder name, fetched separately from the listing. */
+  itemCounts?: Record<string, number>;
   scrollParentRef: React.RefObject<HTMLElement | null>;
   onOpen: (entry: FileEntry) => void;
   onSelect: (path: string) => void;
   onToggleSelect: (path: string) => void;
   onShowActions: (entry: FileEntry, x: number, y: number) => void;
 }) {
-  const { sortField, sortDirection } = useViewStore();
+  const { sortField, sortDirection } = useViewSlice((s) => ({
+    sortField: s.sortField,
+    sortDirection: s.sortDirection,
+  }));
   const sortedEntries = useMemo(
     () =>
       [...entries].sort((a, b) => {
@@ -2758,6 +2821,7 @@ function MobileFileList({
               const entryTransferJobs = entry.is_dir
                 ? transferJobsForTarget(transferJobs, root, filePath)
                 : [];
+              const itemCount = itemCounts?.[entry.name] ?? entry.item_count;
 
               return (
                 <div
@@ -2879,8 +2943,8 @@ function MobileFileList({
                   }}
                 >
                   {entry.is_dir
-                    ? entry.item_count != null
-                      ? formatCount(entry.item_count, "item")
+                    ? itemCount != null
+                      ? formatCount(itemCount, "item")
                       : "Folder"
                     : formatFileSize(entry.size)}
                   {" · "}
