@@ -1,3 +1,9 @@
+## [1.2.1](https://git.tokenet.de/opensource/nasfiles/compare/v1.2.0...v1.2.1) (2026-08-14)
+
+### Bug Fixes
+
+* stop browser UI crashing and make it responsive ([42c7838](https://git.tokenet.de/opensource/nasfiles/commit/42c783899bdef3e9c2fd688442b86be21ec12087))
+
 ## [1.2.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.1.0...v1.2.0) (2026-08-06)
 
 ### Features
