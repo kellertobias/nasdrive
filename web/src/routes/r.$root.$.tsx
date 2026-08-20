@@ -164,6 +164,7 @@ function FileBrowser() {
     sidebarOpen,
     sidebarWidth,
     selectedPaths,
+    clipboard,
     sortField,
     sortDirection,
     setSidebarWidth,
@@ -173,6 +174,7 @@ function FileBrowser() {
     sidebarOpen: s.sidebarOpen,
     sidebarWidth: s.sidebarWidth,
     selectedPaths: s.selectedPaths,
+    clipboard: s.clipboard,
     sortField: s.sortField,
     sortDirection: s.sortDirection,
     setSidebarWidth: s.setSidebarWidth,
@@ -354,6 +356,47 @@ function FileBrowser() {
     },
     [queryClient, root, path],
   );
+
+  // A transfer only *creates* a job — the files land some seconds later, when
+  // the worker finishes. Nothing invalidated the listing at that point, which
+  // was invisible while transfers were drag-and-drop only (you drop onto a
+  // folder you are not looking at). The take-and-paste flow pastes into the
+  // folder on screen, where a stale listing reads as "nothing happened", so a
+  // finishing job now refreshes the folders it touched.
+  //
+  // A job can also be *born* finished as far as this poll is concerned: a
+  // same-root move is a single rename, so it can start and end between two
+  // polls. Only the very first poll of a session is treated as pure history —
+  // after that, a finished job seen for the first time counts as a completion.
+  const seenJobStatusRef = useRef(new Map<string, string>());
+  const jobHistoryLoadedRef = useRef(false);
+  useEffect(() => {
+    const seen = seenJobStatusRef.current;
+    const firstPoll = !jobHistoryLoadedRef.current;
+    jobHistoryLoadedRef.current = true;
+    const touched = new Set<string>();
+
+    for (const job of transferJobs) {
+      const previous = seen.get(job.id);
+      seen.set(job.id, job.status);
+      if (previous === job.status) continue;
+      if (previous === undefined && firstPoll) continue;
+      if (job.status !== "done") continue;
+
+      if (job.dest_root === root) touched.add(job.dest_path);
+      if (job.source_root === root) {
+        for (const p of job.paths) {
+          touched.add(p.split("/").slice(0, -1).join("/"));
+        }
+      }
+    }
+
+    for (const id of [...seen.keys()]) {
+      if (!transferJobs.some((job) => job.id === id)) seen.delete(id);
+    }
+
+    if (touched.has(path)) refreshListing();
+  }, [path, refreshListing, root, transferJobs]);
 
   const togglePreviewAtPath = useCallback(
     (entry: FileEntry, parentPath: string) => {
@@ -576,11 +619,80 @@ function FileBrowser() {
       try {
         await api.transferEntries(sourceRoot, paths, destRoot, dest, operation);
         useViewStore.getState().clearSelection();
+        return true;
       } catch (err) {
         showErrorDialog(`Failed to ${operation}`, err);
+        return false;
       }
     },
     [showErrorDialog],
+  );
+
+  // ---- Take / paste (the pointer-free move & copy flow) ----
+  //
+  // Drag and drop is the desktop answer to "put these files over there", and it
+  // has no touch equivalent. Instead the mobile UI lets the user *take* the
+  // selection into a clipboard, navigate anywhere, and then choose Move here or
+  // Copy here. Both ends reuse `executeTransfer`, so a taken move is the exact
+  // same job a dropped move creates.
+
+  const clipboardTarget = useMemo(() => {
+    if (!clipboard || clipboard.paths.length === 0) return null;
+
+    // Same guard the drop handler applies: a folder cannot swallow itself.
+    const intoItself = isSelfOrDescendantDrop(clipboard, root, path);
+
+    // Pasting back where the files already are is a no-op for a move and a
+    // guaranteed name collision for a copy, so neither is offered.
+    const sourceParents = new Set(
+      clipboard.paths.map((p) => p.split("/").slice(0, -1).join("/")),
+    );
+    const alreadyHere =
+      clipboard.root === root &&
+      sourceParents.size === 1 &&
+      sourceParents.has(path);
+
+    const blockedReason = !caps.write
+      ? "You cannot write to this share."
+      : intoItself
+        ? "Cannot move a folder into itself."
+        : alreadyHere
+          ? "Already in this folder."
+          : null;
+
+    return { count: clipboard.paths.length, blockedReason };
+  }, [caps.write, clipboard, path, root]);
+
+  // The taken selection is held until the job is actually accepted: a failed
+  // request leaves the clipboard intact so the user can retry or pick another
+  // folder instead of re-selecting everything. `pasteBusy` keeps a double tap
+  // from queueing the same transfer twice.
+  const [pasteBusy, setPasteBusy] = useState(false);
+
+  const handlePasteHere = useCallback(
+    async (operation: "move" | "copy") => {
+      const current = useViewStore.getState().clipboard;
+      if (!current || current.paths.length === 0) return;
+      setPasteBusy(true);
+      try {
+        const ok = await executeTransfer(
+          current.root,
+          current.paths,
+          root,
+          path,
+          operation,
+        );
+        if (ok) {
+          useViewStore.getState().clearClipboard();
+          // Nudge the jobs poll: seeing the job while it is still queued flips
+          // the poll to its 1s cadence, so the folder refreshes when it lands.
+          queryClient.invalidateQueries({ queryKey: ["transfer-jobs"] });
+        }
+      } finally {
+        setPasteBusy(false);
+      }
+    },
+    [executeTransfer, path, queryClient, root],
   );
 
   // @tour file-transfers:20 The drop handler
@@ -1056,6 +1168,17 @@ function FileBrowser() {
               />
             </div>
 
+            {clipboardTarget && (
+              <MobileClipboardBar
+                count={clipboardTarget.count}
+                blockedReason={clipboardTarget.blockedReason}
+                busy={pasteBusy}
+                onMove={() => void handlePasteHere("move")}
+                onCopy={() => void handlePasteHere("copy")}
+                onCancel={() => useViewStore.getState().clearClipboard()}
+              />
+            )}
+
             <div
               ref={mobileListingScrollRef}
               style={{
@@ -1202,6 +1325,10 @@ function FileBrowser() {
                   setPreviewTarget({ entry, parentPath })
                 }
                 onDelete={() => setShowDeleteConfirm(true)}
+                onTake={() => {
+                  useViewStore.getState().takeSelection(root);
+                  setMobileDrawerState("closed");
+                }}
               />
             )}
           </main>
@@ -2491,6 +2618,7 @@ function MobileSelectionDrawer({
   onShare,
   onPreview,
   onDelete,
+  onTake,
 }: {
   root: string;
   rootDisplayName: string;
@@ -2505,6 +2633,7 @@ function MobileSelectionDrawer({
   onShare: () => void;
   onPreview: (entry: FileEntry, parentPath: string) => void;
   onDelete: () => void;
+  onTake: () => void;
 }) {
   const dragStartRef = useRef<{ y: number; state: MobileDrawerState } | null>(
     null,
@@ -2600,7 +2729,7 @@ function MobileSelectionDrawer({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) auto auto auto",
+          gridTemplateColumns: "minmax(0, 1fr) repeat(4, auto)",
           alignItems: "center",
           gap: "var(--space-1)",
           padding: "0 var(--space-2) var(--space-2)",
@@ -2646,6 +2775,13 @@ function MobileSelectionDrawer({
         )}
         {canWrite && (
           <MobileIconButton
+            iconName="copy"
+            label="Move or copy"
+            onClick={onTake}
+          />
+        )}
+        {canWrite && (
+          <MobileIconButton
             iconName="trash"
             label="Delete"
             danger
@@ -2686,6 +2822,122 @@ function MobileSelectionDrawer({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The destination half of the take-and-paste flow: shown in whatever folder the
+ * user has navigated to while a selection is taken.
+ *
+ * It stays visible even when the destination is refused (no write permission, a
+ * folder into itself, or the folder the files already live in) so the reason is
+ * legible rather than the buttons silently vanishing — the taken selection is
+ * still there and still cancellable.
+ */
+function MobileClipboardBar({
+  count,
+  blockedReason,
+  busy,
+  onMove,
+  onCopy,
+  onCancel,
+}: {
+  count: number;
+  blockedReason: string | null;
+  busy: boolean;
+  onMove: () => void;
+  onCopy: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-2)",
+        padding: "var(--space-2)",
+        borderBottom: "1px solid var(--color-border)",
+        background: "var(--color-bg-subtle)",
+      }}
+    >
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div
+          style={{
+            fontSize: "var(--text-sm)",
+            fontWeight: 700,
+            color: "var(--color-fg)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {formatCount(count, "item")} ready
+        </div>
+        <div
+          style={{
+            fontSize: "var(--text-xs)",
+            lineHeight: 1.3,
+            color: blockedReason
+              ? "var(--color-danger)"
+              : "var(--color-fg-muted)",
+          }}
+        >
+          {blockedReason ?? (busy ? "Starting…" : "Choose where to put them")}
+        </div>
+      </div>
+      <MobileClipboardButton
+        iconName="folderOpen"
+        label="Move here"
+        disabled={busy || Boolean(blockedReason)}
+        onClick={onMove}
+      />
+      <MobileClipboardButton
+        iconName="copy"
+        label="Copy here"
+        disabled={busy || Boolean(blockedReason)}
+        onClick={onCopy}
+      />
+      <MobileIconButton iconName="x" label="Cancel" onClick={onCancel} />
+    </div>
+  );
+}
+
+function MobileClipboardButton({
+  iconName,
+  label,
+  disabled,
+  onClick,
+}: {
+  iconName: React.ComponentProps<typeof Icon>["name"];
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      style={{
+        minHeight: 42,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "var(--space-1)",
+        padding: "0 var(--space-2)",
+        border: "1px solid var(--color-border)",
+        borderRadius: "var(--radius-md)",
+        background: disabled ? "transparent" : "var(--color-bg)",
+        color: disabled ? "var(--color-fg-subtle)" : "var(--color-fg)",
+        fontSize: "var(--text-sm)",
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <Icon name={iconName} size={16} />
+      {label}
+    </button>
   );
 }
 

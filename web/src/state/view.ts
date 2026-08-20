@@ -6,11 +6,25 @@ export type ViewMode = "grid" | "list" | "columns";
 export type SortField = "name" | "size" | "modified_at";
 export type SortDirection = "asc" | "desc";
 
+/**
+ * A selection the user has "taken" for a later move or copy.
+ *
+ * Deliberately *not* persisted: the paths would outlive the listing they came
+ * from, and a stale clipboard restored days later would offer to move files
+ * that no longer exist. It survives in-app navigation, which is all the
+ * take-then-paste flow needs.
+ */
+export interface ClipboardSelection {
+  root: string;
+  paths: string[];
+}
+
 interface ViewState {
   viewMode: ViewMode;
   sortField: SortField;
   sortDirection: SortDirection;
   selectedPaths: Set<string>;
+  clipboard: ClipboardSelection | null;
   sidebarOpen: boolean;
   sidebarWidth: number;
   shareColumnWidth: number;
@@ -29,6 +43,8 @@ interface ViewState {
   rangeSelect: (paths: string[]) => void;
   selectAll: (paths: string[]) => void;
   clearSelection: () => void;
+  takeSelection: (root: string) => void;
+  clearClipboard: () => void;
   toggleSidebar: () => void;
 }
 
@@ -88,6 +104,7 @@ export const useViewStore = create<ViewState>()(
       sortField: "name",
       sortDirection: "asc",
       selectedPaths: new Set<string>(),
+      clipboard: null,
       sidebarOpen: true,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       shareColumnWidth: DEFAULT_SHARE_COLUMN_WIDTH,
@@ -130,6 +147,15 @@ export const useViewStore = create<ViewState>()(
         }),
       selectAll: (paths) => set({ selectedPaths: new Set(paths) }),
       clearSelection: () => set({ selectedPaths: new Set() }),
+      takeSelection: (root) =>
+        set((s) => {
+          if (s.selectedPaths.size === 0) return {};
+          return {
+            clipboard: { root, paths: Array.from(s.selectedPaths) },
+            selectedPaths: new Set<string>(),
+          };
+        }),
+      clearClipboard: () => set({ clipboard: null }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
     }),
     {
