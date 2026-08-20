@@ -1,3 +1,4 @@
+pub mod dev;
 pub mod local;
 pub mod middleware;
 pub mod oidc;

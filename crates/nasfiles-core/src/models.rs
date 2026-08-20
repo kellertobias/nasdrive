@@ -10,7 +10,7 @@ pub struct FolderCaps {
 
 /// Authenticated user extracted from session.
 /// Stored in the session after OIDC/SAML login.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AuthUser {
     pub user_id: String,
     pub external_id: String,

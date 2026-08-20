@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
     auth::share_audit::run_startup_retention_migration(&pool).await;
 
     auth::local::ensure_setup_admin(&config, &pool).await?;
+    auth::dev::ensure_dev_user(&config, &pool).await?;
 
     // Initialize OIDC client if configured
     if config.oidc.is_some() {

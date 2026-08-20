@@ -796,6 +796,71 @@ pub fn is_admin(config: &AppConfig, user_groups: &[String]) -> bool {
         .any(|ag| user_groups.iter().any(|ug| ug == ag))
 }
 
+/// A fully-populated [`AppConfig`] for tests.
+///
+/// The struct has enough fields that hand-rolling one per test module invites
+/// drift; tests take this and override only what they exercise.
+#[cfg(test)]
+pub(crate) fn test_config() -> AppConfig {
+    let mut common_folders = HashMap::new();
+    common_folders.insert("docs".to_string(), PathBuf::from("/docs"));
+    common_folders.insert("media".to_string(), PathBuf::from("/media"));
+    AppConfig {
+        bind_addr: String::new(),
+        base_url: "http://localhost:3000".into(),
+        session_secret: vec![7; 32],
+        data_dir: PathBuf::new(),
+        dev_mode: true,
+        auth_mode: AuthMode::Local,
+        no_server_side_execution: false,
+        csp_extra_img_src: Vec::new(),
+        csp_extra_media_src: Vec::new(),
+        db_url: String::new(),
+        common_folders,
+        home_folder_root: Some(PathBuf::from("/home")),
+        share_group_of_folder: HashMap::new(),
+        oidc: None,
+        sso_username_claim: String::new(),
+        sso_display_name_claim: String::new(),
+        sso_picture_claim: String::new(),
+        sso_groups_claim: String::new(),
+        group_folder_caps: HashMap::new(),
+        default_folder_caps: HashMap::new(),
+        admin_groups: Vec::new(),
+        personal_folder_groups: None,
+        groups_refresh_interval_secs: 0,
+        dev_user: None,
+        disable_passkeys: false,
+        disable_totp: false,
+        setup_admin: None,
+        totp_trusted_device_ttl_days: 0,
+        thumbnail_cache_dir: PathBuf::new(),
+        thumbnail_max_source_file_size: 0,
+        thumbnail_max_image_width: 0,
+        thumbnail_max_image_height: 0,
+        thumbnail_max_image_alloc: 0,
+        thumbnail_max_concurrent_generations: 1,
+        media_preview_max_concurrent_transcodes: 1,
+        search_max_results: 100,
+        search_live_entry_budget: 25_000,
+        search_live_time_budget_ms: 1_500,
+        search_reindex_interval_secs: 300,
+        search_full_reindex_interval_secs: 0,
+        search_disk_state_file: None,
+        search_hdd_pools: Default::default(),
+        share_token_bytes: 24,
+        sftp_enabled: false,
+        sftp_bind_addr: String::new(),
+        sftp_host_key_path: PathBuf::new(),
+        max_upload_file_size: 0,
+        max_upload_request_size: 0,
+        log_level: String::new(),
+        trusted_proxy_depth: 1,
+        custom_links: Vec::new(),
+        sftp_public_port: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

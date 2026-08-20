@@ -39,15 +39,16 @@ pub async fn require_auth(
     if state.config.dev_mode
         && let Some(ref dev_user_config) = state.config.dev_user
     {
-        // Check if there's already a real session
-        let has_session: bool = session
-            .get::<AuthUser>("user")
-            .await
-            .ok()
-            .flatten()
-            .is_some();
+        // An existing session belonging to a *real* login is left alone. A stored
+        // dev user, by contrast, is refreshed: `COMMON_FOLDERS` and group caps
+        // change between dev restarts, and a session pinned to yesterday's
+        // permissions silently hides shares that now exist.
+        let stored: Option<AuthUser> = session.get::<AuthUser>("user").await.ok().flatten();
+        let is_real_login = stored
+            .as_ref()
+            .is_some_and(|user| user.user_id != super::dev::DEV_USER_ID);
 
-        if !has_session {
+        if !is_real_login {
             let folder_permissions =
                 config::compute_folder_permissions(&state.config, &dev_user_config.groups);
             let is_admin = config::is_admin(&state.config, &dev_user_config.groups);
@@ -55,8 +56,8 @@ pub async fn require_auth(
                 && state.config.home_folder_root.is_some();
 
             let dev_user = AuthUser {
-                user_id: "dev-user-id".to_string(),
-                external_id: "dev:dev-user".to_string(),
+                user_id: super::dev::DEV_USER_ID.to_string(),
+                external_id: super::dev::DEV_EXTERNAL_ID.to_string(),
                 username: dev_user_config.username.clone(),
                 display_name: dev_user_config.display_name.clone(),
                 picture_url: None,
@@ -65,14 +66,18 @@ pub async fn require_auth(
                 is_admin,
             };
 
-            // Store in session so downstream extractors can read it
-            session.insert("user", &dev_user).await.map_err(|e| {
-                (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("session error: {e}"),
-                )
-                    .into_response()
-            })?;
+            // Store in session so downstream extractors can read it. Only write
+            // when something actually changed — every request passes here, and
+            // an unconditional insert would rewrite the session row each time.
+            if stored.as_ref() != Some(&dev_user) {
+                session.insert("user", &dev_user).await.map_err(|e| {
+                    (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("session error: {e}"),
+                    )
+                        .into_response()
+                })?;
+            }
         }
     }
 
