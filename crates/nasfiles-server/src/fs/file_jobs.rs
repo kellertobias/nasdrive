@@ -1038,7 +1038,7 @@ async fn execute_copy_like_job(
         }
     }
 
-    if cleanup_source {
+    if needs_source_cleanup(cleanup_source, &job.source_root, &job.dest_root) {
         cleanup_move_sources(state, job).await?;
     }
 
@@ -1177,10 +1177,22 @@ async fn execute_delete_job(state: &AppState, job: &FileJob) -> Result<(), FileO
 // marks an already-copied file done when its size matches instead of erroring. The deletion
 // loop also tolerates sources that have already vanished.
 
+/// Whether a finished transfer still has sources to delete.
+///
+/// Only a cross-root move does: a same-root move already removed every source
+/// by renaming it, so running the cleanup would resolve paths that no longer
+/// exist and mark an otherwise successful move as errored.
+fn needs_source_cleanup(cleanup_source: bool, source_root: &str, dest_root: &str) -> bool {
+    cleanup_source && source_root != dest_root
+}
+
 async fn cleanup_move_sources(state: &AppState, job: &FileJob) -> Result<(), FileOpError> {
     for source_rel in &job.paths {
         ensure_not_cancelled(state, &job.id).await?;
-        let source = resolve_user_path(
+        // Resolve through the parent rather than the entry itself: a source that
+        // is already gone (a resumed job, or a concurrent delete) must be a skip,
+        // not a hard error, and resolving a missing path cannot succeed.
+        let source = resolve_user_create_path(
             &state.config,
             &job.owner_user,
             &job.source_root,
@@ -1347,4 +1359,25 @@ fn io_error(error: std::io::Error) -> FileOpError {
 fn db_error(error: sqlx::Error) -> FileOpError {
     tracing::error!("file job database error: {error}");
     FileOpError::Io(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::needs_source_cleanup;
+
+    #[test]
+    fn same_root_move_has_nothing_left_to_clean_up() {
+        assert!(!needs_source_cleanup(true, "media", "media"));
+    }
+
+    #[test]
+    fn cross_root_move_still_deletes_its_sources() {
+        assert!(needs_source_cleanup(true, "media", "backup"));
+    }
+
+    #[test]
+    fn copy_never_deletes_its_sources() {
+        assert!(!needs_source_cleanup(false, "media", "backup"));
+        assert!(!needs_source_cleanup(false, "media", "media"));
+    }
 }
