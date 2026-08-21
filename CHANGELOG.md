@@ -1,3 +1,14 @@
+## [1.3.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.2.1...v1.3.0) (2026-08-21)
+
+### Features
+
+* **mobile:** move and copy files with take-and-paste ([a2ebdca](https://git.tokenet.de/opensource/nasfiles/commit/a2ebdcab435eaa2df29c72271388ce618a27db02))
+
+### Bug Fixes
+
+* **dev:** persist the bypass user and expose three roots ([124977c](https://git.tokenet.de/opensource/nasfiles/commit/124977cdc412114854bd4d2bb4c61d7075a1cf48))
+* **transfer:** stop same-root moves finishing as errors ([91c96c7](https://git.tokenet.de/opensource/nasfiles/commit/91c96c71795cdd9de412cd590f585b8da38538c0))
+
 ## [1.2.1](https://git.tokenet.de/opensource/nasfiles/compare/v1.2.0...v1.2.1) (2026-08-14)
 
 ### Bug Fixes
