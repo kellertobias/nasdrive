@@ -10,6 +10,7 @@ mod sftp;
 mod shares;
 mod state;
 mod thumb;
+mod webdav;
 
 use axum::{
     Router,
@@ -397,6 +398,7 @@ async fn main() -> anyhow::Result<()> {
 
     // S3-compatible API — no session or CSRF middleware, uses SigV4
     let s3_router = api::s3::router();
+    let webdav_router = webdav::router(state.clone());
 
     // Spawn background cleanup for abandoned multipart uploads (every hour)
     {
@@ -416,10 +418,12 @@ async fn main() -> anyhow::Result<()> {
         .nest("/auth", auth_routes)
         .nest("/api/public", public_routes)
         .nest("/s3", s3_router)
+        .merge(webdav_router)
         .merge(health)
         .fallback(assets::static_handler)
         .layer(session_layer)
         .layer(cors_layer)
+        .layer(middleware::from_fn(webdav::discovery_options))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(SetResponseHeaderLayer::overriding(

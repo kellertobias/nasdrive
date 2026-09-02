@@ -76,6 +76,7 @@ mime_guess = "2"
 # Streaming
 tokio-util = { version = "0.7", features = ["io", "compat"] }
 bytes = "1"
+httpdate = "1"
 
 # Concurrent collections
 dashmap = "6"

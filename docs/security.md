@@ -100,6 +100,12 @@ S3 secret keys (both personal API tokens and share credentials) are stored **enc
 
 Unlike file-operation jobs (which snapshot permissions at enqueue time), S3 requests re-check the authenticated user's live permissions from the database on every call. If a user's read or write access to a folder is revoked, their S3 token immediately loses access to the corresponding bucket — no need to revoke the token itself.
 
+## WebDAV uses sessions or revocable device credentials
+
+WebDAV accepts the same revalidated browser session used by the authenticated API, including OIDC group refresh, or HTTP Basic device authentication using a personal API access key and secret. It never accepts a local account password, so SSO mode does not expose a hidden password-login path. The device secret is encrypted at rest under `SESSION_SECRET`, checked in constant time, and subject to the token's expiry and revocation state. User and folder permissions are loaded from the database on every device-authenticated request.
+
+Basic authentication is safe only over TLS. NASDrive already requires an `https://` `BASE_URL` outside development or explicitly allowed loopback HTTP; reverse proxies must not expose `/webdav/` over plaintext networks.
+
 ## Dev mode bypasses authentication
 
 When `NASFILES_DEV` is set together with a configured dev user, the auth

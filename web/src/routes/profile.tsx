@@ -655,7 +655,9 @@ function ProfilePage() {
 
           <section style={{ marginBottom: "var(--space-6)" }}>
             <div style={sectionRowStyle}>
-              <h2 style={{ ...sectionTitleStyle, margin: 0 }}>S3 API tokens</h2>
+              <h2 style={{ ...sectionTitleStyle, margin: 0 }}>
+                Device credentials
+              </h2>
               <button
                 type="button"
                 onClick={() => setTokenModalOpen(true)}
@@ -672,8 +674,8 @@ function ProfilePage() {
                 margin: "0 0 var(--space-3)",
               }}
             >
-              Use these credentials with rclone, the AWS CLI, or any
-              S3-compatible tool to access your files programmatically.
+              Use these credentials as the username and password for WebDAV,
+              or as the access key and secret key for S3-compatible tools.
             </p>
             {apiTokens.length === 0 ? (
               <EmptyMessage text="No API tokens" />
@@ -882,7 +884,30 @@ function ProfilePage() {
                   marginBottom: "var(--space-2)",
                 }}
               >
-                rclone configuration
+                WebDAV connection
+              </summary>
+              <div
+                style={{
+                  display: "grid",
+                  gap: "var(--space-2)",
+                  marginBottom: "var(--space-3)",
+                }}
+              >
+                <CopyField value={`${window.location.origin}/webdav/`} />
+                <span style={{ color: "var(--color-fg-muted)" }}>
+                  Username: access key · Password: secret key
+                </span>
+              </div>
+            </details>
+            <details style={{ fontSize: "var(--text-sm)" }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  marginBottom: "var(--space-2)",
+                }}
+              >
+                S3 rclone configuration
               </summary>
               <pre
                 style={{

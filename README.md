@@ -108,7 +108,26 @@ The Forgejo pipeline continues to publish the fixed `nasfiles` image name used b
 - Optional upload permission on shares
 - Share audit and admin visibility
 - Temporary SFTP guests with folder-scoped access
+- WebDAV access for desktop and mobile file clients
 - S3-compatible API for programmatic access via rclone, the AWS CLI, Cyberduck, and other S3-capable tools
+
+### WebDAV
+
+NASDrive exposes a WebDAV endpoint at `/webdav/`. The WebDAV root contains the same personal and common roots visible in the web app, and every operation re-checks the user's current read/write permissions.
+
+Authentication supports both deployment styles:
+
+- **OIDC SSO sessions:** requests made with the NASDrive browser session cookie use the signed-in SSO identity and receive the same live group refresh as the JSON API.
+- **Device credentials:** create credentials on the Profile page, then use the access key as the WebDAV username and the secret key as its password. This is the usual choice for Finder, Windows, mobile file apps, and rclone, which cannot complete NASDrive's interactive OIDC redirect flow.
+
+```bash
+# Discover the accessible roots with device credentials
+curl -u '<access-key>:<secret-key>' \
+  -X PROPFIND -H 'Depth: 1' \
+  https://your-host/webdav/
+```
+
+Supported methods are `OPTIONS`, `PROPFIND` (Depth 0 or 1), `GET`, `HEAD`, `PUT`, `MKCOL`, `DELETE`, `COPY`, and `MOVE`. Production configuration requires HTTPS, so Basic device credentials are not sent over plaintext HTTP.
 
 ### S3-Compatible API
 

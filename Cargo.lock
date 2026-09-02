@@ -2612,6 +2612,7 @@ dependencies = [
  "futures-lite",
  "hex",
  "hmac 0.12.1",
+ "httpdate",
  "image",
  "libc",
  "md5",

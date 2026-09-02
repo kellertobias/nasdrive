@@ -242,3 +242,28 @@ region = us-east-1
 Generate credentials from the profile page, or use the share credential exchange endpoint for share-scoped access. `rclone sync --checksum` works because responses include MD5-based ETags.
 
 The `MAX_UPLOAD_FILE_SIZE` limit applies to S3 PutObject. Multipart uploads have no per-part size restriction other than the final assembled file staying within that limit.
+
+## WebDAV
+
+The WebDAV endpoint is always enabled at `{BASE_URL}/webdav/` and needs no additional configuration. Its top-level collections are the roots visible to the authenticated user. Read-only roots reject `PUT`, `MKCOL`, `DELETE`, `COPY` destinations, and `MOVE` with `403 Forbidden`; permission changes take effect on the next request.
+
+Two authentication paths are supported:
+
+| Path | Authentication | Intended use |
+|---|---|---|
+| SSO session | The persistent `nasfiles.sid` cookie established by OIDC login | Browser-originated WebDAV requests under the interactive SSO identity |
+| Device credentials | HTTP Basic with a profile access key as username and its secret key as password | Finder, Windows, rclone, mobile file clients, and other non-browser DAV clients |
+
+Device credentials are the same revocable credentials used by the S3 API. Create them on the Profile page, choose an expiry, and save the secret when it is shown once. Revocation, expiry, user deletion, and live folder permissions apply to both protocols immediately.
+
+Example rclone setup:
+
+```bash
+rclone config create nasdrive-webdav webdav \
+  url https://your-host/webdav/ \
+  vendor other \
+  user '<access-key>' \
+  pass '<secret-key>'
+```
+
+Interactive OIDC redirects are not part of the WebDAV protocol. A native DAV client should therefore use device credentials; NASDrive does not enable a hidden local-account password when `AUTH_MODE=sso`.

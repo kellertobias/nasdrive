@@ -25,6 +25,45 @@ pub async fn require_auth(
     request: Request,
     next: Next,
 ) -> Result<Response, Response> {
+    let user = resolve_session_user(&state, &session).await?;
+
+    // CSRF protection for state-changing methods
+    let method = request.method().clone();
+    if matches!(
+        method,
+        axum::http::Method::POST | axum::http::Method::PUT | axum::http::Method::DELETE
+    ) {
+        let has_csrf_header = request
+            .headers()
+            .get("X-NasFiles-Request")
+            .is_some_and(|v| v == "1");
+
+        if !has_csrf_header {
+            return Err((
+                axum::http::StatusCode::FORBIDDEN,
+                axum::Json(serde_json::json!({"error": "CSRF header missing"})),
+            )
+                .into_response());
+        }
+    }
+
+    // Inject user into request extensions so handlers can access it
+    let mut request = request;
+    request.extensions_mut().insert(user);
+
+    Ok(next.run(request).await)
+}
+
+/// Resolve and revalidate the user attached to a browser session.
+///
+/// Protocol adapters such as WebDAV use this helper so an OIDC-backed session
+/// gets the same group refresh and a local session gets the same password-change
+/// invalidation as the JSON API. Protocol-specific CSRF rules stay in their
+/// respective middleware.
+pub async fn resolve_session_user(
+    state: &AppState,
+    session: &tower_sessions::Session,
+) -> Result<AuthUser, Response> {
     // @tour comment Dev bypass skips every revalidation
     // With `dev_mode` on and `dev_user` configured, the middleware fabricates an `AuthUser`
     // with `user_id: "dev-user-id"` and *persists it into the session*. It also skips
@@ -83,7 +122,7 @@ pub async fn require_auth(
 
     // Call maybe_refresh_groups unless in dev bypass mode
     let user = if !state.config.dev_mode && matches!(state.config.auth_mode, AuthMode::Sso) {
-        match super::refresh::maybe_refresh_groups(&state, &session).await {
+        match super::refresh::maybe_refresh_groups(state, session).await {
             Ok(u) => u,
             Err(super::refresh::RefreshOutcome::NoAccess) => {
                 return Err((
@@ -101,7 +140,7 @@ pub async fn require_auth(
             }
         }
     } else if !state.config.dev_mode && matches!(state.config.auth_mode, AuthMode::Local) {
-        super::local::current_session_user(&state, &session).await?
+        super::local::current_session_user(state, session).await?
     } else {
         session
             .get::<AuthUser>("user")
@@ -122,31 +161,7 @@ pub async fn require_auth(
             })?
     };
 
-    // CSRF protection for state-changing methods
-    let method = request.method().clone();
-    if matches!(
-        method,
-        axum::http::Method::POST | axum::http::Method::PUT | axum::http::Method::DELETE
-    ) {
-        let has_csrf_header = request
-            .headers()
-            .get("X-NasFiles-Request")
-            .is_some_and(|v| v == "1");
-
-        if !has_csrf_header {
-            return Err((
-                axum::http::StatusCode::FORBIDDEN,
-                axum::Json(serde_json::json!({"error": "CSRF header missing"})),
-            )
-                .into_response());
-        }
-    }
-
-    // Inject user into request extensions so handlers can access it
-    let mut request = request;
-    request.extensions_mut().insert(user);
-
-    Ok(next.run(request).await)
+    Ok(user)
 }
 
 /// Axum extractor for getting the authenticated user from request extensions.

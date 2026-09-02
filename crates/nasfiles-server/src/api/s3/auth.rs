@@ -6,6 +6,7 @@ use axum::{
 use nasfiles_core::{models::AuthUser, sigv4};
 use sqlx::AnyPool;
 use std::collections::HashMap;
+use subtle::ConstantTimeEq;
 
 use crate::{config::AppConfig, shares::model::Share, state::AppState};
 
@@ -360,6 +361,35 @@ pub async fn lookup_credential(
     Err(S3AuthError::InvalidCredentials)
 }
 
+/// Verify a personal API token as an access-key/secret pair.
+///
+/// S3 needs the decrypted secret in order to reconstruct a SigV4 signature.
+/// Other device protocols use this narrower helper so share-scoped S3
+/// credentials are never accepted as user credentials and the secret is
+/// compared in constant time before the live user permissions are returned.
+pub async fn verify_user_api_credential(
+    pool: &AnyPool,
+    config: &AppConfig,
+    access_key: &str,
+    supplied_secret: &str,
+) -> Result<AuthUser, S3AuthError> {
+    let (stored_secret, principal) = lookup_credential(pool, access_key, config).await?;
+    let valid = stored_secret.len() == supplied_secret.len()
+        && stored_secret
+            .as_bytes()
+            .ct_eq(supplied_secret.as_bytes())
+            .into();
+    if !valid {
+        return Err(S3AuthError::InvalidCredentials);
+    }
+
+    let S3Principal::UserToken { user, .. } = principal else {
+        return Err(S3AuthError::InvalidCredentials);
+    };
+    update_last_used(pool, access_key).await;
+    Ok(user)
+}
+
 pub async fn load_user(
     pool: &AnyPool,
     config: &AppConfig,
@@ -372,15 +402,15 @@ pub async fn load_user(
         display_name: String,
         picture_url: Option<String>,
         folder_permissions_json: Option<String>,
-        has_home: bool,
-        is_admin: bool,
+        has_home: i64,
+        is_admin: i64,
     }
 
     let row = sqlx::query_as::<_, UserRow>(
         "SELECT id, username, display_name, picture_url, folder_permissions_json, \
          CASE WHEN has_home THEN 1 ELSE 0 END AS has_home, \
          CASE WHEN is_admin THEN 1 ELSE 0 END AS is_admin \
-         FROM users WHERE id = $1 AND disabled_at IS NULL",
+         FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -401,8 +431,8 @@ pub async fn load_user(
         display_name: row.display_name,
         picture_url: row.picture_url,
         folder_permissions,
-        has_home: row.has_home,
-        is_admin: row.is_admin,
+        has_home: row.has_home != 0,
+        is_admin: row.is_admin != 0,
     })
 }
 
