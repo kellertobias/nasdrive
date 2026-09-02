@@ -1,3 +1,9 @@
+## [1.4.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.3.0...v1.4.0) (2026-09-02)
+
+### Features
+
+* add WebDAV support ([3040e9f](https://git.tokenet.de/opensource/nasfiles/commit/3040e9ff1c927580ba3af6305cbb681f01fad428))
+
 ## [1.3.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.2.1...v1.3.0) (2026-08-21)
 
 ### Features
