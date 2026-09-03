@@ -1,3 +1,10 @@
+## [1.4.1](https://git.tokenet.de/opensource/nasfiles/compare/v1.4.0...v1.4.1) (2026-09-03)
+
+### Bug Fixes
+
+* **s3:** cover personal-token user loading with regression tests ([21e1d3d](https://git.tokenet.de/opensource/nasfiles/commit/21e1d3ddc54a1abd8d8b975f47c57e493c346625))
+* **webdav:** add class 2 locking, staged writes and integration tests ([7e35dd7](https://git.tokenet.de/opensource/nasfiles/commit/7e35dd71f76b3243e8ad5e30040e71921c3f9b70))
+
 ## [1.4.0](https://git.tokenet.de/opensource/nasfiles/compare/v1.3.0...v1.4.0) (2026-09-02)
 
 ### Features
