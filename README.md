@@ -127,7 +127,7 @@ curl -u '<access-key>:<secret-key>' \
   https://your-host/webdav/
 ```
 
-Supported methods are `OPTIONS`, `PROPFIND` (Depth 0 or 1), `GET`, `HEAD`, `PUT`, `MKCOL`, `DELETE`, `COPY`, and `MOVE`. Production configuration requires HTTPS, so Basic device credentials are not sent over plaintext HTTP.
+Supported methods are `OPTIONS`, `PROPFIND` (Depth 0 or 1), `GET`, `HEAD`, `PUT`, `MKCOL`, `DELETE`, `COPY`, `MOVE`, `LOCK`, and `UNLOCK`. The endpoint advertises DAV class 2 with in-memory advisory locks, which is what macOS Finder and Windows need before they allow writes. Uploads and overwriting copies are staged next to the destination and swapped in only after they complete, so an interrupted transfer never leaves a truncated file behind. Production configuration requires HTTPS, so Basic device credentials are not sent over plaintext HTTP.
 
 ### S3-Compatible API
 

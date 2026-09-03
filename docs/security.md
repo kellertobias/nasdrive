@@ -104,6 +104,10 @@ Unlike file-operation jobs (which snapshot permissions at enqueue time), S3 requ
 
 WebDAV accepts the same revalidated browser session used by the authenticated API, including OIDC group refresh, or HTTP Basic device authentication using a personal API access key and secret. It never accepts a local account password, so SSO mode does not expose a hidden password-login path. The device secret is encrypted at rest under `SESSION_SECRET`, checked in constant time, and subject to the token's expiry and revocation state. User and folder permissions are loaded from the database on every device-authenticated request.
 
+Session-authenticated WebDAV requests skip the JSON API's CSRF header because native clients cannot send it. The session cookie is `SameSite=Lax` and the CORS layer only accepts the configured origin, so a cross-site page cannot issue mutating DAV requests with the cookie. Both settings must stay in place.
+
+Every WebDAV write is staged as a sibling temp entry and renamed into place only once it is complete. Locks are advisory and per-process; they order concurrent DAV clients but are not a security boundary.
+
 Basic authentication is safe only over TLS. NASDrive already requires an `https://` `BASE_URL` outside development or explicitly allowed loopback HTTP; reverse proxies must not expose `/webdav/` over plaintext networks.
 
 ## Dev mode bypasses authentication

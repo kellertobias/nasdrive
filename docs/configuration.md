@@ -245,7 +245,9 @@ The `MAX_UPLOAD_FILE_SIZE` limit applies to S3 PutObject. Multipart uploads have
 
 ## WebDAV
 
-The WebDAV endpoint is always enabled at `{BASE_URL}/webdav/` and needs no additional configuration. Its top-level collections are the roots visible to the authenticated user. Read-only roots reject `PUT`, `MKCOL`, `DELETE`, `COPY` destinations, and `MOVE` with `403 Forbidden`; permission changes take effect on the next request.
+The WebDAV endpoint is always enabled at `{BASE_URL}/webdav/` and needs no additional configuration. Its top-level collections are the roots visible to the authenticated user. Read-only roots reject `PUT`, `MKCOL`, `DELETE`, `LOCK`, `COPY` destinations, and `MOVE` with `403 Forbidden`; permission changes take effect on the next request.
+
+Locks (`LOCK`/`UNLOCK`) are exclusive write locks kept in server memory. They default to 10 minutes, accept a `Timeout` header up to one hour, and are forgotten on restart; clients re-lock transparently. A `Destination` header on `COPY`/`MOVE` must point at this server, matched against the request `Host` or `BASE_URL`, otherwise the request fails with `502 Bad Gateway`.
 
 Two authentication paths are supported:
 

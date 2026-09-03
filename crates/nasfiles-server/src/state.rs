@@ -23,6 +23,8 @@ pub struct AppState {
     pub webauthn: Option<Arc<Webauthn>>,
     pub sftp_sessions: SftpSessionRegistry,
     pub started_at: DateTime<Utc>,
+    /// In-memory WebDAV lock table (class 2 advisory locks).
+    pub webdav_locks: crate::webdav::LockTable,
 }
 
 impl AppState {
@@ -49,6 +51,7 @@ impl AppState {
             webauthn,
             sftp_sessions: SftpSessionRegistry::new(),
             started_at: Utc::now(),
+            webdav_locks: crate::webdav::LockTable::default(),
         })
     }
 }
