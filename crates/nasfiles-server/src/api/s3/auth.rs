@@ -507,3 +507,105 @@ fn parse_datetime_secs(datetime: &str) -> Option<i64> {
         .ok()
         .map(|dt| dt.and_utc().timestamp())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::test_config;
+    use sqlx::any::AnyPoolOptions;
+
+    async fn pool_with_user_token(revoked: bool) -> AnyPool {
+        sqlx::any::install_default_drivers();
+        let pool = AnyPoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("sqlite pool");
+        for statement in [
+            "CREATE TABLE users (
+                id TEXT PRIMARY KEY, external_id TEXT NOT NULL UNIQUE, username TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL, picture_url TEXT, is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                folder_permissions_json TEXT, has_home BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at BIGINT NOT NULL, last_login_at BIGINT NOT NULL)",
+            "CREATE TABLE user_api_tokens (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT NOT NULL,
+                access_key TEXT NOT NULL UNIQUE, secret_key TEXT NOT NULL, created_at BIGINT NOT NULL,
+                expires_at BIGINT, last_used_at BIGINT, revoked_at BIGINT)",
+            "CREATE TABLE s3_share_credentials (
+                id TEXT PRIMARY KEY, share_id TEXT NOT NULL, access_key TEXT NOT NULL UNIQUE,
+                secret_key TEXT NOT NULL, created_at BIGINT NOT NULL, expires_at BIGINT NOT NULL,
+                last_used_at BIGINT)",
+            "INSERT INTO users (id, external_id, username, display_name, is_admin, folder_permissions_json, has_home, created_at, last_login_at)
+             VALUES ('u1', 'ext', 'alice', 'Alice', TRUE, '{\"docs\":{\"read\":true,\"write\":false,\"share\":false}}', TRUE, 0, 0)",
+        ] {
+            sqlx::query(statement).execute(&pool).await.unwrap();
+        }
+        let encrypted =
+            crate::crypto::encrypt_secret(&test_config().session_secret, "s3cret").unwrap();
+        sqlx::query(
+            "INSERT INTO user_api_tokens (id, user_id, label, access_key, secret_key, created_at, revoked_at)
+             VALUES ('t1', 'u1', 'l', 'AK', $1, 0, $2)",
+        )
+        .bind(encrypted)
+        .bind(if revoked { Some(1_i64) } else { None })
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    /// Regression: `load_user` used to filter on a `disabled_at` column that no
+    /// migration ever created, so every personal-token request failed at the
+    /// database. It also has to map SQLite's integer booleans correctly.
+    #[tokio::test]
+    async fn load_user_reads_live_row_with_boolean_flags() {
+        let pool = pool_with_user_token(false).await;
+        let user = load_user(&pool, &test_config(), "u1").await.unwrap();
+        assert_eq!(user.username, "alice");
+        assert!(user.is_admin);
+        assert!(user.has_home);
+        assert!(user.can_read("docs"));
+        assert!(!user.can_write("docs"));
+        assert!(matches!(
+            load_user(&pool, &test_config(), "missing").await,
+            Err(S3AuthError::InvalidCredentials)
+        ));
+    }
+
+    #[tokio::test]
+    async fn verify_user_api_credential_checks_secret_and_revocation() {
+        let pool = pool_with_user_token(false).await;
+        let config = test_config();
+        let user = verify_user_api_credential(&pool, &config, "AK", "s3cret")
+            .await
+            .expect("valid credential");
+        assert_eq!(user.user_id, "u1");
+        assert!(matches!(
+            verify_user_api_credential(&pool, &config, "AK", "s3cre").await,
+            Err(S3AuthError::InvalidCredentials)
+        ));
+        assert!(matches!(
+            verify_user_api_credential(&pool, &config, "AK", "s3cret!").await,
+            Err(S3AuthError::InvalidCredentials)
+        ));
+        assert!(matches!(
+            verify_user_api_credential(&pool, &config, "nope", "s3cret").await,
+            Err(S3AuthError::InvalidCredentials)
+        ));
+        let last_used: Option<i64> =
+            sqlx::query_scalar("SELECT last_used_at FROM user_api_tokens WHERE id = 't1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(
+            last_used.is_some(),
+            "successful verification records last use"
+        );
+
+        let revoked = pool_with_user_token(true).await;
+        assert!(matches!(
+            verify_user_api_credential(&revoked, &config, "AK", "s3cret").await,
+            Err(S3AuthError::InvalidCredentials)
+        ));
+    }
+}
