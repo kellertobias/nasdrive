@@ -1,3 +1,10 @@
+## [1.4.2](https://git.tokenet.de/opensource/nasfiles/compare/v1.4.1...v1.4.2) (2026-09-27)
+
+### Bug Fixes
+
+* require app authorization before SSO access ([c4d1f2c](https://git.tokenet.de/opensource/nasfiles/commit/c4d1f2cce09747a85c2fecaeeb54de55cb7e35eb))
+* update rustls to resolve CI security advisory ([ad396fc](https://git.tokenet.de/opensource/nasfiles/commit/ad396fcbd765318b61cd253e341355e3fae09a5c))
+
 ## [1.4.1](https://git.tokenet.de/opensource/nasfiles/compare/v1.4.0...v1.4.1) (2026-09-03)
 
 ### Bug Fixes
