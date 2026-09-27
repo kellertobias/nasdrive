@@ -41,6 +41,7 @@ pub struct AppConfig {
     pub sso_display_name_claim: String,
     pub sso_picture_claim: String,
     pub sso_groups_claim: String,
+    pub sso_access_groups: Vec<String>,
 
     // Group → folder mapping
     pub group_folder_caps: HashMap<String, HashMap<String, FolderCaps>>,
@@ -273,6 +274,14 @@ impl AppConfig {
         let sso_groups_claim =
             std::env::var("SSO_GROUPS_CLAIM").unwrap_or_else(|_| "groups".to_string());
 
+        let sso_access_groups = std::env::var("SSO_ACCESS_GROUPS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect();
+
         // Group → folder capabilities
         let group_folder_caps = discover_group_folder_caps();
 
@@ -489,6 +498,7 @@ impl AppConfig {
             sso_display_name_claim,
             sso_picture_claim,
             sso_groups_claim,
+            sso_access_groups,
             group_folder_caps,
             default_folder_caps,
             admin_groups,
@@ -751,6 +761,23 @@ fn discover_default_folder_caps() -> HashMap<String, FolderCaps> {
     caps_map
 }
 
+/// App admission is independent of default folders and unrestricted home access.
+/// An explicit allowlist takes precedence; otherwise only configured app roles qualify.
+pub fn app_access_allowed(config: &AppConfig, groups: &[String]) -> bool {
+    groups.iter().any(|group| {
+        if !config.sso_access_groups.is_empty() {
+            config.sso_access_groups.contains(group)
+        } else {
+            config.group_folder_caps.contains_key(group)
+                || config.admin_groups.contains(group)
+                || config
+                    .personal_folder_groups
+                    .as_ref()
+                    .is_some_and(|g| g.contains(group))
+        }
+    })
+}
+
 /// Compute the folder capabilities a user has based on their SSO groups.
 pub fn compute_folder_permissions(
     config: &AppConfig,
@@ -824,6 +851,7 @@ pub(crate) fn test_config() -> AppConfig {
         sso_display_name_claim: String::new(),
         sso_picture_claim: String::new(),
         sso_groups_claim: String::new(),
+        sso_access_groups: Vec::new(),
         group_folder_caps: HashMap::new(),
         default_folder_caps: HashMap::new(),
         admin_groups: Vec::new(),
@@ -876,6 +904,39 @@ mod tests {
     }
 
     #[test]
+    fn app_admission_requires_an_app_role_even_with_defaults_or_home() {
+        let mut config = test_config();
+        config.home_folder_root = Some(PathBuf::from("/homes"));
+        config.default_folder_caps.insert(
+            "docs".into(),
+            FolderCaps {
+                read: true,
+                write: true,
+                share: true,
+            },
+        );
+        assert!(!app_access_allowed(&config, &[]));
+        assert!(!app_access_allowed(&config, &["unrelated-app".into()]));
+        config.sso_access_groups = vec!["nasdrive-user".into()];
+        assert!(app_access_allowed(&config, &["nasdrive-user".into()]));
+        assert!(personal_folder_allowed(&config, &["nasdrive-user".into()]));
+    }
+
+    #[test]
+    fn admin_cannot_bypass_explicit_app_admission() {
+        let mut config = test_config();
+        config.admin_groups = vec!["admin".into()];
+        assert!(app_access_allowed(&config, &["admin".into()]));
+        config.sso_access_groups = vec!["nasdrive-user".into()];
+        assert!(is_admin(&config, &["admin".into()]));
+        assert!(!app_access_allowed(&config, &["admin".into()]));
+        assert!(app_access_allowed(
+            &config,
+            &["admin".into(), "nasdrive-user".into()]
+        ));
+    }
+
+    #[test]
     fn test_compute_folder_permissions() {
         let mut group_caps = HashMap::new();
         let mut admin_caps = HashMap::new();
@@ -923,6 +984,7 @@ mod tests {
             sso_display_name_claim: "".into(),
             sso_picture_claim: "".into(),
             sso_groups_claim: "".into(),
+            sso_access_groups: Vec::new(),
             group_folder_caps: group_caps,
             default_folder_caps: HashMap::new(),
             admin_groups: vec![],

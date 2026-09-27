@@ -30,6 +30,7 @@ services:
       SSO_DISPLAY_NAME_CLAIM: "name"
       SSO_PICTURE_CLAIM: "picture"
       SSO_GROUPS_CLAIM: "groups"
+      SSO_ACCESS_GROUPS: "EDITORS,admins"
 
       # Everyone can read Media. Editors can write/share Documents and Projects.
       SSO_DEFAULT_FOLDERS_READ: "Media"

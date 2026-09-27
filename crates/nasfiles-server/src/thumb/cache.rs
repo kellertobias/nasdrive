@@ -544,6 +544,7 @@ mod tests {
             sso_display_name_claim: String::new(),
             sso_picture_claim: String::new(),
             sso_groups_claim: String::new(),
+            sso_access_groups: Vec::new(),
             group_folder_caps: HashMap::<String, HashMap<String, FolderCaps>>::new(),
             default_folder_caps: HashMap::new(),
             admin_groups: vec![],

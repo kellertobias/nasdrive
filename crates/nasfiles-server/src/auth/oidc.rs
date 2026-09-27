@@ -319,6 +319,7 @@ pub async fn callback(
     // share one home folder. Deny rather than silently sanitize so the
     // collision can never occur.
     if let Err(reason) = nasfiles_core::models::validate_username(&username) {
+        session.clear().await;
         tracing::warn!(
             user = %username,
             external_id = %external_id,
@@ -349,6 +350,14 @@ pub async fn callback(
 
     let groups: Vec<String> =
         extract_claim_array(&extra_claims, &state.config.sso_groups_claim).unwrap_or_default();
+
+    if !config::app_access_allowed(&state.config, &groups) {
+        session.clear().await;
+        return Ok((
+            axum::http::StatusCode::FORBIDDEN,
+            axum::response::Html("<h1>Access Denied</h1><p>Your account is not authorized for NASDrive. Contact your administrator.</p>"),
+        ).into_response());
+    }
 
     // Compute permissions
     let folder_permissions = config::compute_folder_permissions(&state.config, &groups);
@@ -386,6 +395,7 @@ pub async fn callback(
     };
 
     if effectively_no_access {
+        session.clear().await;
         tracing::warn!(
             user = %username,
             external_id = %external_id,
@@ -471,6 +481,11 @@ pub async fn callback(
     session.remove::<String>("oidc_pkce_verifier").await.ok();
     session.remove::<String>("oidc_csrf_token").await.ok();
     session.remove::<String>("oidc_nonce").await.ok();
+
+    session
+        .insert("oidc_app_access_verified", true)
+        .await
+        .map_err(|e| AppError::Internal(format!("session error: {e}")))?;
 
     // Store AuthUser in session
     let auth_user = nasfiles_core::models::AuthUser {

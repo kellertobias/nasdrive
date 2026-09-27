@@ -20,7 +20,13 @@ pub async fn maybe_refresh_groups(
     };
 
     let interval = state.config.groups_refresh_interval_secs;
-    if interval == 0 {
+    let admission_verified = session
+        .get::<bool>("oidc_app_access_verified")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    if interval == 0 && admission_verified {
         return Ok(user);
     }
 
@@ -31,14 +37,17 @@ pub async fn maybe_refresh_groups(
         .unwrap_or(0);
     let now = chrono::Utc::now().timestamp();
 
-    if now - refreshed_at < interval as i64 {
+    if admission_verified && now - refreshed_at < interval as i64 {
         return Ok(user);
     }
 
     // Attempt refresh
     let oidc_state = match super::oidc::OIDC_CLIENT.get() {
         Some(s) => s,
-        None => return Ok(user), // OIDC not configured, shouldn't happen but ignore
+        None => {
+            session.clear().await;
+            return Err(RefreshOutcome::Expired);
+        }
     };
 
     let mut access_token: String = match session.get("oidc_access_token").await {
@@ -143,6 +152,11 @@ pub async fn maybe_refresh_groups(
     let groups = super::oidc::extract_claim_array(&userinfo_json, &state.config.sso_groups_claim)
         .unwrap_or_default();
 
+    if !config::app_access_allowed(&state.config, &groups) {
+        let _ = session.clear().await;
+        return Err(RefreshOutcome::NoAccess);
+    }
+
     let new_folder_permissions = config::compute_folder_permissions(&state.config, &groups);
     let is_admin = config::is_admin(&state.config, &groups);
 
@@ -209,12 +223,8 @@ pub async fn maybe_refresh_groups(
     }
 
     for root_key in lost_roots {
-        if !super::permission_grace::confirm_permission_loss(
-            &state.pool,
-            &user.user_id,
-            &root_key,
-        )
-        .await
+        if !super::permission_grace::confirm_permission_loss(&state.pool, &user.user_id, &root_key)
+            .await
         {
             tracing::info!(
                 user_id = %user.user_id,
@@ -244,6 +254,7 @@ pub async fn maybe_refresh_groups(
         );
     }
 
+    let _ = session.insert("oidc_app_access_verified", true).await;
     let _ = session.insert("user", &user).await;
     let _ = session.insert("oidc_groups_refreshed_at", now).await;
 

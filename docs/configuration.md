@@ -98,6 +98,7 @@ Local mode has no public registration. Create users from the admin UI.
 | `SSO_USERNAME_CLAIM` | `preferred_username` | Username claim. |
 | `SSO_DISPLAY_NAME_CLAIM` | `name` | Display-name claim. |
 | `SSO_PICTURE_CLAIM` | `picture` | Avatar URL claim. |
+| `SSO_ACCESS_GROUPS` | unset | App admission role allowlist; applies to admins too. Unset uses explicitly configured folder, admin, and personal-folder roles. |
 | `SSO_GROUPS_CLAIM` | `groups` | Group list claim. |
 | `SSO_GROUPS_REFRESH_INTERVAL_SECS` | `300` | Interval for refreshing SSO-derived groups and permissions. |
 

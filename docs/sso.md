@@ -76,6 +76,7 @@ environment:
   SSO_DEFAULT_FOLDERS_READ: "Media"
   SSO_GROUP_EDITORS_COMMON_FOLDERS: "Documents"
   SSO_ADMIN_GROUPS: "admins"
+  SSO_ACCESS_GROUPS: "EDITORS,admins"
 ```
 
 Create `.env`:
@@ -119,6 +120,26 @@ environment:
   SSO_DISPLAY_NAME_CLAIM: "name"
   SSO_GROUPS_CLAIM: "roles"
 ```
+
+## App authorization (required)
+
+A valid SSO account alone does not grant NASDrive access, including for admins.
+Set `SSO_ACCESS_GROUPS` to the app roles allowed to log in, for example
+`nasdrive-user,nasdrive-admin`. This allowlist takes precedence over admin and
+folder mappings. When unset, only roles explicitly configured in folder mappings,
+`SSO_ADMIN_GROUPS`, or `SSO_PERSONAL_FOLDER_GROUPS` admit users. Default folder
+grants and unrestricted personal folders never admit a user by themselves.
+
+For Zitadel, set `SSO_GROUPS_CLAIM` to
+`urn:zitadel:iam:org:project:<NASDrive-project-ID>:roles` and enable role assertion
+for ID tokens and UserInfo in that project/application. Assign the allowed app
+roles to users in Zitadel. Use a NASDrive-specific role allowlist if the project
+contains other applications. Missing or empty role claims deny access.
+
+After admission, an authorized user may receive a personal folder without any
+shared-folder permissions. Existing sessions created before this check are
+revalidated on their next request. Later changes follow the configured refresh
+interval (default 300 seconds; 0 disables periodic refresh).
 
 ## 4. Folder Permissions
 
