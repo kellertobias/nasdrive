@@ -10,6 +10,21 @@
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/release-notes-generator": "^14.0.3",
     "conventional-changelog-conventionalcommits": "^8.0.0",
-    "semantic-release": "^24.2.9"
+    "semantic-release": "^25.0.9"
+  },
+  "overrides": {
+    "handlebars": "^4.7.10",
+    "tar": "^7.5.21",
+    "undici@^7.0.0": "^7.29.1",
+    "js-yaml@^4.0.0": "^4.3.2",
+    "source-map-js": "^1.2.2",
+    "brace-expansion@^1.0.0": "^1.1.21",
+    "brace-expansion@^2.0.0": "^2.1.7",
+    "brace-expansion@^3.0.0": "^3.0.8",
+    "brace-expansion@^5.0.0": "^5.0.12",
+    "ip-address": "^10.5.1",
+    "picomatch@^4.0.0": "^4.0.4",
+    "postcss-selector-parser": "^7.1.6",
+    "undici@^6.0.0": "^6.29.0"
   }
 }

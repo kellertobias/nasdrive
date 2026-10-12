@@ -13,6 +13,7 @@ RUN npx vite build
 # Stage 2: Backend build
 # ─────────────────────────────────────────────────────────────
 FROM rust:1-bookworm AS backend
+ENV CARGO_BUILD_JOBS=2
 
 WORKDIR /app
 ARG NASFILES_BUILD_COMMIT=""
