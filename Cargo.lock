@@ -2567,7 +2567,7 @@ dependencies = [
 
 [[package]]
 name = "nasfiles-core"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "anyhow",
  "base64ct",
@@ -2585,7 +2585,7 @@ dependencies = [
 
 [[package]]
 name = "nasfiles-server"
-version = "1.4.2"
+version = "1.4.3"
 dependencies = [
  "aes-gcm 0.10.3",
  "anyhow",

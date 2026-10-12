@@ -1,3 +1,9 @@
+## [1.4.3](https://git.tokenet.de/opensource/nasfiles/compare/v1.4.2...v1.4.3) (2026-10-12)
+
+### Bug Fixes
+
+* **security:** update vulnerable dependencies and runtime images ([e2a025c](https://git.tokenet.de/opensource/nasfiles/commit/e2a025c7b89cfd642004c1ad68958c79a5581b79))
+
 ## [1.4.2](https://git.tokenet.de/opensource/nasfiles/compare/v1.4.1...v1.4.2) (2026-09-27)
 
 ### Bug Fixes
